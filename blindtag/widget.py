@@ -54,19 +54,28 @@ Dependencies: PySide6 >= 6.8
 
 from __future__ import annotations
 
+import json
+import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QTextEdit,
     QVBoxLayout,
@@ -78,7 +87,8 @@ from .exceptions import InvalidPayloadError
 
 # ─── Asset paths ──────────────────────────────────────────────────────────────
 
-_ASSETS_DIR = Path(__file__).parent.parent / "assets" / "images"
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "images"
+_DEFAULT_LIBRARY_PATH = Path(__file__).resolve().parent.parent / "assets" / "emoji_library_default.json"
 
 # ─── Colour palette ───────────────────────────────────────────────────────────
 
@@ -96,6 +106,95 @@ C_ERROR     = "#E85555"   # Alert Red
 # ─── Timing ───────────────────────────────────────────────────────────────────
 
 NOTIFY_DURATION_MS: int = 4_500  # Notification overlay auto-dismiss duration
+
+# ─── Emoji library ────────────────────────────────────────────────────────────
+
+_CODE_RE = re.compile(r"^[ -~]+$")  # printable ASCII 0x20–0x7E
+
+
+class EmojiLibrary:
+    """
+    Headless load/save/validate manager for the emoji alias library.
+
+    Accepts an explicit ``path`` for dependency injection (tests pass a
+    ``tmp_path`` copy; production code passes ``_DEFAULT_LIBRARY_PATH``).
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    # ------------------------------------------------------------------
+    # Read
+    # ------------------------------------------------------------------
+
+    def load(self) -> list[dict]:
+        """Load and validate entries.  Returns [] on malformed JSON."""
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            # Caller may surface this to the status bar.
+            self._warn = str(exc)
+            return []
+        entries: list[dict] = []
+        for item in raw:
+            if self.validate_entry(item):
+                entries.append(item)
+            # silently drop invalid entries (schema drift protection)
+        return entries
+
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def validate_codes(codes: list[str]) -> bool:
+        """Return True if every code is non-empty printable ASCII."""
+        if not codes:
+            return False
+        return all(isinstance(c, str) and bool(_CODE_RE.match(c)) for c in codes)
+
+    @classmethod
+    def validate_entry(cls, entry: dict) -> bool:
+        """Return True if entry satisfies the schema contract."""
+        required = {"emoji", "alias", "codes", "label"}
+        if not required.issubset(entry):
+            return False
+        if not isinstance(entry["codes"], list) or not cls.validate_codes(entry["codes"]):
+            return False
+        if entry["alias"] not in entry["codes"]:
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # Write
+    # ------------------------------------------------------------------
+
+    def _save(self, entries: list[dict]) -> None:
+        """Atomic write: write to .tmp then rename."""
+        tmp = self._path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        tmp.replace(self._path)
+
+    def add_entry(self, entry: dict) -> None:
+        entries = self.load()
+        entries.append(entry)
+        self._save(entries)
+
+    def remove_entry(self, emoji: str) -> None:
+        entries = [e for e in self.load() if e["emoji"] != emoji]
+        self._save(entries)
+
+    def set_active_alias(self, emoji: str, code: str) -> None:
+        entries = self.load()
+        for e in entries:
+            if e["emoji"] == emoji:
+                if code in e["codes"]:
+                    e["alias"] = code
+                break
+        self._save(entries)
+
 
 # ─── Stylesheet helpers ───────────────────────────────────────────────────────
 
@@ -168,6 +267,409 @@ def _toggle_inactive_style() -> str:
     )
 
 
+# ─── Guidance panel ──────────────────────────────────────────────────────────
+
+_CARD_CONTENT: list[tuple[str, str]] = [
+    (
+        "Anchor text",
+        "The visible text your payload will be hidden inside. "
+        "Any readable string works. The receiver sees only this "
+        "text unless they decode it.",
+    ),
+    (
+        "Hidden payload",
+        "The secret message to embed. Must be printable characters "
+        "(letters, numbers, punctuation, spaces). Max ~9,000 characters. "
+        "Emojis must be inserted as aliases — use the emoji button next to this field.",
+    ),
+    (
+        "Emoji aliases",
+        "Emojis cannot be embedded directly (they are not printable ASCII). "
+        "The emoji selector inserts a short alias like :smile: instead. "
+        "The receiver decodes and sees the alias text. "
+        "You can edit the library to add your own.",
+    ),
+    (
+        "Obfuscate & Copy",
+        "Runs encode and immediately copies the result to your clipboard. "
+        "The output looks identical to your anchor text — the payload is invisible.",
+    ),
+    (
+        "Clip Watch",
+        "Monitors your clipboard. When you copy text that contains a hidden payload, "
+        "BlindTag automatically detects and shows it. No data leaves your machine.",
+    ),
+]
+
+
+class _EmojiCard(QWidget):
+    """Collapsible help card with caret toggle."""
+
+    def __init__(self, title: str, body: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._expanded = False
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(2)
+
+        # Header row
+        self._header = QPushButton(f"\u25b6  {title}")
+        self._header.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {C_TEXT}; "
+            f"font-size: 9pt; font-weight: bold; text-align: left; border: none; padding: 2px 0; }}"
+            f"QPushButton:hover {{ color: {C_ACCENT}; }}"
+        )
+        self._header.clicked.connect(self._toggle)
+        layout.addWidget(self._header)
+
+        # Body label (hidden until expanded)
+        self._body = QLabel(body)
+        self._body.setWordWrap(True)
+        self._body.setStyleSheet(
+            f"color: {C_MUTED}; font-size: 9pt; background: transparent; padding: 0 4px 4px 14px;"
+        )
+        self._body.setVisible(False)
+        layout.addWidget(self._body)
+
+    def _toggle(self) -> None:
+        self._expanded = not self._expanded
+        caret = "\u25bc" if self._expanded else "\u25b6"
+        title = self._header.text()[2:]  # strip old caret + space
+        self._header.setText(f"{caret}  {title}")
+        self._body.setVisible(self._expanded)
+
+
+class _GuidancePanel(QWidget):
+    """Left-side slide-out help panel — 200px overlay, z-ordered above _stack."""
+
+    def __init__(self, parent: "BlindTagWindow") -> None:
+        super().__init__(parent)
+        self.setFixedWidth(200)
+        self.setStyleSheet(
+            f"background-color: {C_SECONDARY}; border-right: 1px solid #303030;"
+        )
+        self.hide()
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 8, 0, 8)
+        layout.setSpacing(0)
+
+        header = QLabel("  HELP")
+        header.setStyleSheet(
+            f"color: {C_MUTED}; font-size: 9pt; font-weight: bold; "
+            f"padding: 4px 8px 8px 8px; background: transparent;"
+        )
+        layout.addWidget(header)
+
+        for title, body in _CARD_CONTENT:
+            layout.addWidget(_EmojiCard(title, body))
+
+        layout.addStretch()
+
+    def reposition(self, parent_height: int, top_offset: int, bottom_offset: int) -> None:
+        """Resize/reposition to fill the area between toggle strip and status bar."""
+        h = parent_height - top_offset - bottom_offset
+        self.setGeometry(0, top_offset, 200, h)
+
+
+# ─── Emoji flyout ─────────────────────────────────────────────────────────────
+
+
+class _EmojiFlyout(QFrame):
+    """Floating glyph-grid flyout anchored below the \u263a trigger button."""
+
+    def __init__(
+        self,
+        parent: "BlindTagWindow",
+        library: EmojiLibrary,
+        on_select,
+        on_edit_library,
+    ) -> None:
+        super().__init__(parent)
+        self._parent_win = parent
+        self._on_select = on_select
+
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setStyleSheet(
+            f"QFrame {{ background-color: {C_SURFACE}; border: 1px solid #303030; border-radius: 6px; }}"
+        )
+        self.setFixedWidth(240)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 6, 6, 4)
+        outer.setSpacing(4)
+
+        # Scrollable grid area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll.setMaximumHeight(190)
+
+        grid_widget = QWidget()
+        grid_widget.setStyleSheet("background: transparent;")
+        from PySide6.QtWidgets import QGridLayout
+        grid = QGridLayout(grid_widget)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(2)
+
+        entries = library.load()
+        self._entries = entries
+        COLS = 6
+        for idx, entry in enumerate(entries):
+            btn = QPushButton(entry["emoji"])
+            btn.setFixedSize(44, 44)
+            btn.setToolTip(entry["alias"])
+            btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none; border-radius: 4px; "
+                f"font-size: 18pt; padding: 0; }}"
+                f"QPushButton:hover {{ background-color: #303030; }}"
+            )
+            alias = entry["alias"]
+            btn.clicked.connect(lambda checked=False, a=alias: self._pick(a))
+            grid.addWidget(btn, idx // COLS, idx % COLS)
+
+        scroll.setWidget(grid_widget)
+        outer.addWidget(scroll)
+
+        # Divider
+        div = QFrame()
+        div.setFrameShape(QFrame.HLine)
+        div.setStyleSheet("color: #303030;")
+        outer.addWidget(div)
+
+        # Edit library link
+        btn_edit = QPushButton("Edit library  \u2699")
+        btn_edit.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {C_MUTED}; "
+            f"font-size: 9pt; border: none; text-align: left; padding: 2px 4px; }}"
+            f"QPushButton:hover {{ color: {C_TEXT}; }}"
+        )
+        btn_edit.clicked.connect(on_edit_library)
+        outer.addWidget(btn_edit)
+
+        self.adjustSize()
+        # Install event filter on parent to dismiss on click-outside
+        parent.installEventFilter(self)
+
+    def _pick(self, alias: str) -> None:
+        self._on_select(alias)
+        self.hide()
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.MouseButtonPress and self.isVisible():
+            if not self.geometry().contains(event.position().toPoint()):
+                self.hide()
+        return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape:
+            self.hide()
+        super().keyPressEvent(event)
+
+
+# ─── Library editor panel ─────────────────────────────────────────────────────
+
+
+class _LibraryEditorPanel(QWidget):
+    """Fourth _stack panel — entered from flyout, exited via Back button."""
+
+    def __init__(self, parent: "BlindTagWindow", library: EmojiLibrary) -> None:
+        super().__init__(parent)
+        self._win = parent
+        self._library = library
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 8, 12, 8)
+        root.setSpacing(6)
+
+        # Header row
+        header_row = QWidget()
+        hl = QHBoxLayout(header_row)
+        hl.setContentsMargins(0, 0, 0, 0)
+        btn_back = QPushButton("\u2190  Back")
+        btn_back.setStyleSheet(_btn_ghost_style())
+        btn_back.setFixedHeight(28)
+        btn_back.clicked.connect(parent._return_from_editor)
+        hl.addWidget(btn_back)
+        lbl = QLabel("Emoji Library")
+        lbl.setStyleSheet(f"color: {C_TEXT}; font-weight: bold; font-size: 10pt; background: transparent;")
+        hl.addWidget(lbl)
+        hl.addStretch()
+        root.addWidget(header_row)
+
+        # Divider
+        div = QFrame()
+        div.setFrameShape(QFrame.HLine)
+        div.setStyleSheet("color: #303030;")
+        root.addWidget(div)
+
+        # Scrollable entry list
+        self._list_scroll = QScrollArea()
+        self._list_scroll.setWidgetResizable(True)
+        self._list_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self._list_container = QWidget()
+        self._list_container.setStyleSheet("background: transparent;")
+        self._list_layout = QVBoxLayout(self._list_container)
+        self._list_layout.setContentsMargins(0, 0, 0, 0)
+        self._list_layout.setSpacing(2)
+        self._list_layout.addStretch()
+        self._list_scroll.setWidget(self._list_container)
+        root.addWidget(self._list_scroll, stretch=1)
+
+        # Divider
+        div2 = QFrame()
+        div2.setFrameShape(QFrame.HLine)
+        div2.setStyleSheet("color: #303030;")
+        root.addWidget(div2)
+
+        # Add-entry form
+        form_lbl = QLabel("+ Add entry")
+        form_lbl.setStyleSheet(f"color: {C_MUTED}; font-size: 9pt; background: transparent;")
+        root.addWidget(form_lbl)
+
+        form_row = QWidget()
+        fl = QHBoxLayout(form_row)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.setSpacing(4)
+
+        self._add_emoji = QLineEdit()
+        self._add_emoji.setPlaceholderText("\U0001f600")
+        self._add_emoji.setFixedWidth(44)
+        self._add_emoji.setMaxLength(4)  # allow multi-codepoint emoji
+        self._add_emoji.setStyleSheet(self._field_style())
+
+        self._add_label = QLineEdit()
+        self._add_label.setPlaceholderText("label")
+        self._add_label.setFixedWidth(80)
+        self._add_label.setStyleSheet(self._field_style())
+
+        self._add_codes = QLineEdit()
+        self._add_codes.setPlaceholderText(":alias:, ALT")
+        self._add_codes.setStyleSheet(self._field_style())
+
+        btn_add = QPushButton("Add")
+        btn_add.setStyleSheet(_btn_secondary_style())
+        btn_add.setFixedHeight(30)
+        btn_add.clicked.connect(self._do_add)
+
+        fl.addWidget(self._add_emoji)
+        fl.addWidget(self._add_label)
+        fl.addWidget(self._add_codes, stretch=1)
+        fl.addWidget(btn_add)
+        root.addWidget(form_row)
+
+        self._validation_lbl = QLabel("")
+        self._validation_lbl.setStyleSheet(f"color: {C_ERROR}; font-size: 9pt; background: transparent;")
+        root.addWidget(self._validation_lbl)
+
+    @staticmethod
+    def _field_style(invalid: bool = False) -> str:
+        border = C_ERROR if invalid else "#303030"
+        return (
+            f"QLineEdit {{ background-color: {C_SECONDARY}; color: {C_TEXT}; "
+            f"border: 1px solid {border}; border-radius: 4px; padding: 3px 6px; font-size: 9pt; }}"
+        )
+
+    def refresh(self) -> None:
+        """Reload entries from library and rebuild the list UI."""
+        # Remove all rows except the trailing stretch
+        while self._list_layout.count() > 1:
+            item = self._list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        entries = self._library.load()
+        for entry in entries:
+            self._list_layout.insertWidget(self._list_layout.count() - 1, self._make_row(entry))
+
+    def _make_row(self, entry: dict) -> QWidget:
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(0, 2, 0, 2)
+        hl.setSpacing(6)
+
+        # Glyph
+        lbl_glyph = QLabel(entry["emoji"])
+        lbl_glyph.setStyleSheet(f"font-size: 14pt; background: transparent; color: {C_TEXT};")
+        lbl_glyph.setFixedWidth(28)
+        hl.addWidget(lbl_glyph)
+
+        # Active indicator
+        lbl_dot = QLabel("\u25cf")
+        lbl_dot.setStyleSheet(f"color: {C_ACCENT}; background: transparent; font-size: 8pt;")
+        lbl_dot.setFixedWidth(10)
+        hl.addWidget(lbl_dot)
+
+        # Codes picker (QComboBox)
+        combo = QComboBox()
+        combo.setStyleSheet(
+            f"QComboBox {{ background-color: {C_SECONDARY}; color: {C_TEXT}; "
+            f"border: 1px solid #303030; border-radius: 4px; font-size: 9pt; padding: 2px 4px; }}"
+        )
+        combo.addItems(entry["codes"])
+        combo.setCurrentText(entry["alias"])
+        emoji_str = entry["emoji"]
+        combo.currentTextChanged.connect(
+            lambda code, em=emoji_str: self._library.set_active_alias(em, code)
+        )
+        hl.addWidget(combo, stretch=1)
+
+        # Label
+        lbl_name = QLabel(entry["label"])
+        lbl_name.setStyleSheet(f"color: {C_MUTED}; font-size: 9pt; background: transparent;")
+        lbl_name.setFixedWidth(60)
+        hl.addWidget(lbl_name)
+
+        # Delete button
+        btn_del = QPushButton("\u2715")
+        btn_del.setFixedSize(22, 22)
+        btn_del.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {C_MUTED}; border: none; font-size: 10pt; }}"
+            f"QPushButton:hover {{ color: {C_ERROR}; }}"
+        )
+        btn_del.clicked.connect(lambda checked=False, em=emoji_str: self._do_delete(em))
+        hl.addWidget(btn_del)
+
+        return row
+
+    def _do_add(self) -> None:
+        self._validation_lbl.setText("")
+        emoji = self._add_emoji.text().strip()
+        label = self._add_label.text().strip()
+        raw_codes = self._add_codes.text()
+        codes = [c.strip() for c in raw_codes.split(",") if c.strip()]
+
+        if not emoji:
+            self._validation_lbl.setText("Emoji is required.")
+            self._add_emoji.setStyleSheet(self._field_style(invalid=True))
+            return
+        if not codes:
+            self._validation_lbl.setText("At least one code is required.")
+            self._add_codes.setStyleSheet(self._field_style(invalid=True))
+            return
+        if not EmojiLibrary.validate_codes(codes):
+            self._validation_lbl.setText("Codes must be printable ASCII only.")
+            self._add_codes.setStyleSheet(self._field_style(invalid=True))
+            return
+
+        # Reset field borders
+        self._add_emoji.setStyleSheet(self._field_style())
+        self._add_codes.setStyleSheet(self._field_style())
+
+        entry = {"emoji": emoji, "alias": codes[0], "codes": codes, "label": label or emoji}
+        self._library.add_entry(entry)
+        self._add_emoji.clear()
+        self._add_label.clear()
+        self._add_codes.clear()
+        self.refresh()
+
+    def _do_delete(self, emoji: str) -> None:
+        self._library.remove_entry(emoji)
+        self.refresh()
+
+
 # ─── Title bar ────────────────────────────────────────────────────────────────
 
 class _TitleBar(QWidget):
@@ -202,6 +704,13 @@ class _TitleBar(QWidget):
             f"color: {C_ACCENT}; font-size: 12pt; font-weight: bold; background: transparent;"
         )
         layout.addWidget(lbl_title)
+
+        # Help button
+        self._btn_help = QPushButton("?")
+        self._btn_help.setFixedSize(26, 26)
+        self._btn_help.setStyleSheet(_btn_ghost_style())
+        layout.addWidget(self._btn_help)
+
         layout.addStretch()
 
         # Minimize button
@@ -271,6 +780,12 @@ class BlindTagWindow(QMainWindow):
         self._notify_timer = QTimer(self)
         self._notify_timer.setSingleShot(True)
         self._notify_timer.timeout.connect(self._dismiss_notify)
+        self._emoji_flyout: Optional[_EmojiFlyout] = None
+        self._prev_panel: str = "encode"  # restore after library editor
+
+        # Emoji library
+        self._library = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
+        warn = getattr(self._library, "_warn", None)
 
         # Build UI
         central = QWidget()
@@ -279,21 +794,34 @@ class BlindTagWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        root.addWidget(_TitleBar(self))
-        root.addWidget(self._build_toggle_strip())
+        self._title_bar = _TitleBar(self)
+        self._title_bar._btn_help.clicked.connect(self._toggle_guidance_panel)
+        root.addWidget(self._title_bar)
+
+        self._toggle_strip = self._build_toggle_strip()
+        root.addWidget(self._toggle_strip)
 
         self._stack = QStackedWidget()
         root.addWidget(self._stack, stretch=1)
 
         self._encode_panel = self._build_encode_panel()
         self._decode_panel = self._build_decode_panel()
-        self._stack.addWidget(self._encode_panel)
-        self._stack.addWidget(self._decode_panel)
+        self._library_editor = _LibraryEditorPanel(self, self._library)
+        self._stack.addWidget(self._encode_panel)    # index 0
+        self._stack.addWidget(self._decode_panel)    # index 1
+        self._stack.addWidget(self._library_editor)  # index 2
 
-        root.addWidget(self._build_status_bar())
+        self._status_bar = self._build_status_bar()
+        root.addWidget(self._status_bar)
+
+        # Guidance panel (overlays _stack)
+        self._guidance_panel = _GuidancePanel(self)
 
         self._bind_hotkeys()
         self._show_encode()
+
+        if warn:
+            self._set_status(f"\u26a0  Emoji library: {warn}", C_WARNING)
 
     # =========================================================================
     # UI Construction
@@ -339,7 +867,20 @@ class BlindTagWindow(QMainWindow):
         self._anchor_input = self._make_textbox(82)
         layout.addWidget(self._anchor_input)
 
-        layout.addWidget(self._section_label("HIDDEN PAYLOAD  ·  printable ASCII only"))
+        # HIDDEN PAYLOAD row with emoji trigger
+        payload_row = QWidget()
+        payload_row.setStyleSheet("background: transparent;")
+        pr = QHBoxLayout(payload_row)
+        pr.setContentsMargins(0, 0, 0, 0)
+        pr.setSpacing(4)
+        pr.addWidget(self._section_label("HIDDEN PAYLOAD  \u00b7  printable ASCII only"), stretch=1)
+        self._btn_emoji = QPushButton("\u263a")
+        self._btn_emoji.setFixedSize(26, 26)
+        self._btn_emoji.setStyleSheet(_btn_ghost_style())
+        self._btn_emoji.clicked.connect(self._open_emoji_flyout)
+        pr.addWidget(self._btn_emoji)
+        layout.addWidget(payload_row)
+
         self._hidden_input = self._make_textbox(68)
         layout.addWidget(self._hidden_input)
 
@@ -472,14 +1013,83 @@ class BlindTagWindow(QMainWindow):
     def _show_encode(self) -> None:
         self._stack.setCurrentWidget(self._encode_panel)
         self._current_panel = "encode"
+        self._prev_panel = "encode"
         self._btn_encode.setStyleSheet(_toggle_active_style())
         self._btn_decode.setStyleSheet(_toggle_inactive_style())
 
     def _show_decode(self) -> None:
         self._stack.setCurrentWidget(self._decode_panel)
         self._current_panel = "decode"
+        self._prev_panel = "decode"
         self._btn_encode.setStyleSheet(_toggle_inactive_style())
         self._btn_decode.setStyleSheet(_toggle_active_style())
+
+    def _show_library_editor(self) -> None:
+        self._library_editor.refresh()
+        self._stack.setCurrentWidget(self._library_editor)
+        self._current_panel = "library"
+
+    def _return_from_editor(self) -> None:
+        if self._prev_panel == "decode":
+            self._show_decode()
+        else:
+            self._show_encode()
+
+    # =========================================================================
+    # Guidance panel
+    # =========================================================================
+
+    def _toggle_guidance_panel(self) -> None:
+        if self._guidance_panel.isVisible():
+            self._guidance_panel.hide()
+        else:
+            self._reposition_guidance_panel()
+            self._guidance_panel.show()
+            self._guidance_panel.raise_()
+
+    def _reposition_guidance_panel(self) -> None:
+        top = self._title_bar.height() + self._toggle_strip.height()
+        bottom = self._status_bar.height()
+        self._guidance_panel.reposition(self.height(), top, bottom)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._guidance_panel.isVisible():
+            self._reposition_guidance_panel()
+
+    # =========================================================================
+    # Emoji flyout
+    # =========================================================================
+
+    def _open_emoji_flyout(self) -> None:
+        if self._emoji_flyout is not None:
+            self._emoji_flyout.hide()
+            self._emoji_flyout.deleteLater()
+        self._emoji_flyout = _EmojiFlyout(
+            self,
+            self._library,
+            on_select=self._insert_alias,
+            on_edit_library=self._open_library_editor,
+        )
+        # Position below the emoji trigger button
+        btn_pos = self._btn_emoji.mapTo(self, self._btn_emoji.rect().bottomLeft())
+        x = btn_pos.x() - self._emoji_flyout.width() + self._btn_emoji.width()
+        y = btn_pos.y() + 4
+        # Keep within window bounds
+        x = max(0, min(x, self.width() - self._emoji_flyout.width()))
+        self._emoji_flyout.move(x, y)
+        self._emoji_flyout.show()
+        self._emoji_flyout.raise_()
+
+    def _insert_alias(self, alias: str) -> None:
+        cursor = self._hidden_input.textCursor()
+        cursor.insertText(alias)
+        self._hidden_input.setTextCursor(cursor)
+
+    def _open_library_editor(self) -> None:
+        if self._emoji_flyout is not None:
+            self._emoji_flyout.hide()
+        self._show_library_editor()
 
     # =========================================================================
     # Core actions

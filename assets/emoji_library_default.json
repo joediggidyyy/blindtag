@@ -1,0 +1,22 @@
+[
+  { "emoji": "\ud83d\ude00", "alias": ":smile:",      "codes": [":smile:", ":smiley:", ":grinning:", "SMILE"],  "label": "smile"       },
+  { "emoji": "\ud83d\ude02", "alias": ":lol:",        "codes": [":lol:", ":joy:", "LOL"],                       "label": "laughing"    },
+  { "emoji": "\u2764\ufe0f", "alias": ":heart:",      "codes": [":heart:", ":love:", "HEART"],                  "label": "heart"       },
+  { "emoji": "\ud83d\udc4d", "alias": ":thumbsup:",   "codes": [":thumbsup:", ":+1:", "OK"],                    "label": "thumbs up"   },
+  { "emoji": "\ud83d\udc4e", "alias": ":thumbsdown:", "codes": [":thumbsdown:", ":-1:", "NO"],                  "label": "thumbs down" },
+  { "emoji": "\ud83d\udd25", "alias": ":fire:",       "codes": [":fire:", "HOT"],                               "label": "fire"        },
+  { "emoji": "\u2b50",       "alias": ":star:",       "codes": [":star:", "STAR"],                              "label": "star"        },
+  { "emoji": "\u2705",       "alias": ":check:",      "codes": [":check:", ":ok:", "YES"],                      "label": "check"       },
+  { "emoji": "\u274c",       "alias": ":x:",          "codes": [":x:", ":no:", "NO"],                           "label": "x"           },
+  { "emoji": "\u26a0\ufe0f", "alias": ":warn:",       "codes": [":warn:", ":alert:", "WARN"],                   "label": "warning"     },
+  { "emoji": "\ud83d\udd12", "alias": ":lock:",       "codes": [":lock:", "LOCKED"],                            "label": "lock"        },
+  { "emoji": "\ud83d\udd13", "alias": ":unlock:",     "codes": [":unlock:", "OPEN"],                            "label": "unlock"      },
+  { "emoji": "\ud83d\udcce", "alias": ":clip:",       "codes": [":clip:", ":attach:"],                          "label": "clip"        },
+  { "emoji": "\ud83d\udccb", "alias": ":paste:",      "codes": [":paste:", ":clipboard:"],                      "label": "paste"       },
+  { "emoji": "\ud83d\uddd1\ufe0f", "alias": ":trash:", "codes": [":trash:", ":delete:", "DEL"],                 "label": "trash"       },
+  { "emoji": "\ud83d\udcac", "alias": ":msg:",        "codes": [":msg:", ":chat:", "MSG"],                      "label": "message"     },
+  { "emoji": "\ud83d\udccc", "alias": ":pin:",        "codes": [":pin:", "PIN"],                                "label": "pin"         },
+  { "emoji": "\ud83c\udff7\ufe0f", "alias": ":tag:",  "codes": [":tag:", "TAG"],                                "label": "tag"         },
+  { "emoji": "\ud83d\udd11", "alias": ":key:",        "codes": [":key:", "KEY"],                                "label": "key"         },
+  { "emoji": "\ud83d\udc41\ufe0f", "alias": ":eye:",  "codes": [":eye:", ":watch:", "EYE"],                     "label": "eye"         }
+]
