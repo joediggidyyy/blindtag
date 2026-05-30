@@ -1,0 +1,98 @@
+{
+  "schema_version": "calamum-test-catalog-v2",
+  "definitions": [
+    {
+      "id": "blindtag-core",
+      "title": "BlindTag Core Codec Engine",
+      "summary": "Unit tests for the Plane 14 steganographic encode/decode/strip_plane14 engine, validation boundaries, normalization resistance, and adversarial crash immunity.",
+      "status": "active",
+      "category": "general",
+      "selector_policy": "exact-name-only",
+      "profiles": ["default", "smoke", "release"],
+      "tags": ["api", "smoke"],
+      "policy_flags": ["deterministic-output", "local-only"],
+      "evidence_requirements": ["stdout_capture", "stderr_capture", "report_json"],
+      "default_lanes": ["pytest"],
+      "metadata": {
+        "module": "blindtag.core",
+        "test_file": "tests/test_core.py"
+      },
+      "lanes": {
+        "pytest": [
+          {
+            "id": "core-pytest",
+            "title": "pytest tests/test_core.py",
+            "command": ["{python}", "-m", "pytest", "tests/test_core.py", "-v", "--tb=short"],
+            "expected_artifacts": ["stdout", "stderr"],
+            "evidence_requirements": ["stdout_capture", "stderr_capture"],
+            "notes": "Codec round-trip, adversarial, normalization, boundary enforcement."
+          }
+        ],
+        "sandbox_test": [],
+        "empirical_test": []
+      }
+    },
+    {
+      "id": "blindtag-api",
+      "title": "BlindTag FastAPI Transport Layer",
+      "summary": "Integration tests for all FastAPI endpoints: /v1/encode, /v1/decode, /health. Exercises Pydantic validation, error handlers, size limits, and round-trip fidelity via TestClient.",
+      "status": "active",
+      "category": "integration",
+      "selector_policy": "exact-name-only",
+      "profiles": ["default", "release"],
+      "tags": ["api", "smoke"],
+      "policy_flags": ["deterministic-output", "local-only"],
+      "evidence_requirements": ["stdout_capture", "stderr_capture", "report_json"],
+      "default_lanes": ["pytest"],
+      "metadata": {
+        "module": "blindtag.api",
+        "test_file": "tests/test_api.py"
+      },
+      "lanes": {
+        "pytest": [
+          {
+            "id": "api-pytest",
+            "title": "pytest tests/test_api.py",
+            "command": ["{python}", "-m", "pytest", "tests/test_api.py", "-v", "--tb=short"],
+            "expected_artifacts": ["stdout", "stderr"],
+            "evidence_requirements": ["stdout_capture", "stderr_capture"],
+            "notes": "Full API endpoint integration via FastAPI TestClient."
+          }
+        ],
+        "sandbox_test": [],
+        "empirical_test": []
+      }
+    },
+    {
+      "id": "blindtag-all",
+      "title": "BlindTag Full Suite",
+      "summary": "Rollup lane running the complete test suite (core + API). This is the pre-push baseline gate.",
+      "status": "active",
+      "category": "regression",
+      "selector_policy": "exact-name-only",
+      "profiles": ["default", "release"],
+      "tags": ["smoke", "aggregate"],
+      "policy_flags": ["deterministic-output", "local-only", "release-gate"],
+      "evidence_requirements": ["stdout_capture", "stderr_capture", "report_json"],
+      "default_lanes": ["pytest"],
+      "metadata": {
+        "module": "blindtag",
+        "test_file": "tests/"
+      },
+      "lanes": {
+        "pytest": [
+          {
+            "id": "all-pytest",
+            "title": "pytest tests/ (full suite)",
+            "command": ["{python}", "-m", "pytest", "tests/", "-v", "--tb=short", "--cov=blindtag", "--cov-report=term-missing"],
+            "expected_artifacts": ["stdout", "stderr"],
+            "evidence_requirements": ["stdout_capture", "stderr_capture"],
+            "notes": "Full test suite rollup. Must pass before any push to main."
+          }
+        ],
+        "sandbox_test": [],
+        "empirical_test": []
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "blindtag"
@@ -9,7 +9,28 @@ description = "Unicode Plane 14 steganographic obfuscation toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+authors = [
+    { name = "Polymath", email = "dev@polymath-global.com" },
+]
 keywords = ["steganography", "unicode", "watermarking", "plane14", "encoding"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Text Processing :: Linguistic",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://polymath-global.com"
+Source = "https://github.com/joediggidyyy/blindtag"
+Issues = "https://github.com/joediggidyyy/blindtag/issues"
+Changelog = "https://github.com/joediggidyyy/blindtag/blob/main/CHANGELOG.md"
 
 dependencies = [
     # API server

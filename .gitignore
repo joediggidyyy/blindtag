@@ -58,3 +58,7 @@ CLAUDE.md
 local_untracked/
 logs/
 semantics_staging/
+report_tmp/
+
+# Calamum generated runtime outputs
+.calamum/
