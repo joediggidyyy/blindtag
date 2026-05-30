@@ -56,13 +56,19 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 import customtkinter as ctk
 import pyperclip
+from PIL import Image
 
 from .core import decode, encode, strip_plane14
 from .exceptions import InvalidPayloadError
+
+# ─── Asset paths ──────────────────────────────────────────────────────────────
+
+_ASSETS_DIR = Path(__file__).parent.parent / "assets" / "images"
 
 # ─── Colour palette ───────────────────────────────────────────────────────────
 
@@ -111,6 +117,16 @@ class BlindTagWidget(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
+        # ── Load logo ───────────────────────────────────────────────────────
+        logo_path = _ASSETS_DIR / "blindtag_logo.png"
+        if logo_path.exists():
+            _pil = Image.open(logo_path)
+            self._logo_img: Optional[ctk.CTkImage] = ctk.CTkImage(
+                light_image=_pil, dark_image=_pil, size=(28, 28)
+            )
+        else:
+            self._logo_img = None
+
         # ── Window configuration ────────────────────────────────────────────
         self.title("BlindTag")
         self.geometry("530x555")
@@ -150,11 +166,21 @@ class BlindTagWidget(ctk.CTk):
         bar.pack(fill="x", side="top")
         bar.pack_propagate(False)
 
+        if self._logo_img is not None:
+            logo_icon = ctk.CTkLabel(
+                bar, image=self._logo_img, text="",
+                width=28, height=28,
+            )
+            logo_icon.pack(side="left", padx=(12, 4), pady=6)
+            for widget in (bar, logo_icon):
+                widget.bind("<ButtonPress-1>",  self._drag_start)
+                widget.bind("<B1-Motion>",       self._drag_motion)
+
         logo = ctk.CTkLabel(
-            bar, text="⬡  BlindTag",
+            bar, text="BlindTag" if self._logo_img is not None else "⬡  BlindTag",
             font=FONT_TITLE, text_color=C_ACCENT,
         )
-        logo.pack(side="left", padx=14, pady=8)
+        logo.pack(side="left", padx=(0 if self._logo_img is not None else 14), pady=8)
 
         # Window controls (right-aligned)
         ctrl = ctk.CTkFrame(bar, fg_color="transparent")

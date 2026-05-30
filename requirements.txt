@@ -8,6 +8,7 @@ pydantic>=2.7.0
 
 # Desktop widget & clipboard
 customtkinter>=5.2.2
+Pillow>=10.0.0
 pyperclip>=1.8.2
 
 # ─── Development / Testing ────────────────────────────────────────────────────

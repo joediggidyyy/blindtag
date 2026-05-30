@@ -1,5 +1,9 @@
 # ⬡ BlindTag
 
+<p align="center">
+  <img src="assets/images/blindtag_logo.png" alt="BlindTag" width="180">
+</p>
+
 > Unicode Plane 14 Steganographic Obfuscation Toolkit
 
 A [Polymath](https://polymath-global.com) open-source project.
@@ -284,6 +288,10 @@ No data leaves the local machine. The watcher thread is a Python `daemon` thread
 
 ## Running Tests
 
+> Tests are orchestrated via **[Calamum](https://github.com/joediggidyyy/calamum)** — the Polymath test runner.
+>
+> <img src="assets/images/calamum_logo_color.png" alt="Calamum" width="80">
+
 ```bash
 # All tests
 pytest
@@ -332,4 +340,10 @@ MIT — see `LICENSE` for details.
 
 ---
 
-*BlindTag is developed and maintained by [Polymath](https://polymath-global.com).*
+<p align="center">
+  <a href="https://polymath-global.com">
+    <img src="assets/images/polymath_global.png" alt="Polymath Global" width="140">
+  </a>
+  <br>
+  <em>BlindTag is developed and maintained by <a href="https://polymath-global.com">Polymath Global</a>.</em>
+</p>
