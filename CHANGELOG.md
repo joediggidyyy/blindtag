@@ -26,13 +26,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Stale `blindtag/__init__.py` module docstring: widget description updated from `(customtkinter)` to `(PySide6)` (Pass C — `69cdda4`)
 - `README.md`: architecture block and Linux clipboard section updated to reflect PySide6 rewrite (planning pass — `3ab3a26`)
 
-### Planned (see [docs/REVIEW_AND_MATURITY_PLAN.md](docs/REVIEW_AND_MATURITY_PLAN.md))
-- Fix `pyproject.toml` build backend (deprecated `legacy:build` → `setuptools.build_meta`)
-- Add project authors, URLs, and classifiers to `pyproject.toml`
+### Planned (see [docs/REVIEW_AND_MATURITY_PLAN.md](docs/REVIEW_AND_MATURITY_PLAN.md) and [docs/WIDGET_SCHEMA.md](docs/WIDGET_SCHEMA.md))
+- **Widget guidance panel** — left-side slide-out `?` panel with collapsed problem-definition cards (Anchor text, Hidden payload, Emoji aliases, Obfuscate & Copy, Clip Watch); see [docs/WIDGET_SCHEMA.md](docs/WIDGET_SCHEMA.md)
+- **Emoji alias selector** — inline `☺` trigger on the Hidden Payload row; floating `QFrame` flyout (not modal) showing emoji + alias pairs; clicking appends alias to payload field; aliases are printable ASCII so they encode cleanly through the Plane 14 codec
+- **Emoji library editor** — fourth panel in `_stack`, accessible from flyout `Edit library` link; add/delete entries; writes through to `assets/emoji_library.json`; alias validated as printable ASCII on entry
+- `assets/emoji_library_default.json` — 20-entry curated default library shipped with the package; seeded into user-local `assets/emoji_library.json` on first run
 - Resolve `test_only_tag_cancel_yields_none_or_empty` test ambiguity
-- Add `tests/test_widget.py` (import smoke + plumbing)
+- Add `tests/test_widget.py` (import smoke + plumbing + emoji library + guidance panel)
 - Add `X-Request-Id` response header to API
 - Add security headers to API responses
+- Add project authors, URLs, and classifiers to `pyproject.toml`
 
 ---
 
