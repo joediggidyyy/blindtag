@@ -29,6 +29,7 @@ Running the server
 
 from __future__ import annotations
 
+import uuid
 from typing import Optional
 
 import uvicorn
@@ -74,7 +75,18 @@ app.add_middleware(
 )
 
 
-# ─── Domain exception handler ─────────────────────────────────────────────────
+# ─── Security headers middleware ──────────────────────────────────────────────
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Inject mandatory security headers on every response."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Request-Id"] = str(uuid.uuid4())
+    return response
+
+
 
 @app.exception_handler(InvalidPayloadError)
 async def invalid_payload_handler(

@@ -250,3 +250,53 @@ class TestCorsPolicy:
         r = client.get("/health", headers={"Origin": "http://localhost:8000"})
         assert r.status_code == 200
         assert r.headers.get("access-control-allow-origin") == "http://localhost:8000"
+
+
+# =============================================================================
+# Security headers
+# =============================================================================
+
+import re as _re
+
+_UUID4_RE = _re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+
+
+class TestSecurityHeaders:
+    """Every response must carry X-Content-Type-Options, X-Frame-Options, X-Request-Id."""
+
+    def test_x_content_type_options_on_health(self) -> None:
+        r = client.get("/health")
+        assert r.headers.get("x-content-type-options") == "nosniff"
+
+    def test_x_frame_options_on_health(self) -> None:
+        r = client.get("/health")
+        assert r.headers.get("x-frame-options") == "DENY"
+
+    def test_x_request_id_on_health(self) -> None:
+        r = client.get("/health")
+        val = r.headers.get("x-request-id", "")
+        assert _UUID4_RE.match(val), f"x-request-id not a UUID4: {val!r}"
+
+    def test_x_content_type_options_on_encode(self) -> None:
+        r = client.post("/v1/encode", json={"anchor": "test", "hidden_message": "hdr"})
+        assert r.headers.get("x-content-type-options") == "nosniff"
+
+    def test_x_frame_options_on_encode(self) -> None:
+        r = client.post("/v1/encode", json={"anchor": "test", "hidden_message": "hdr"})
+        assert r.headers.get("x-frame-options") == "DENY"
+
+    def test_x_request_id_unique_per_request(self) -> None:
+        r1 = client.get("/health")
+        r2 = client.get("/health")
+        id1 = r1.headers.get("x-request-id", "")
+        id2 = r2.headers.get("x-request-id", "")
+        assert _UUID4_RE.match(id1) and _UUID4_RE.match(id2)
+        assert id1 != id2
+
+    def test_security_headers_on_error_response(self) -> None:
+        r = client.post("/v1/encode", json={"anchor": "", "hidden_message": ""})
+        assert r.status_code == 422
+        assert r.headers.get("x-content-type-options") == "nosniff"
+        assert r.headers.get("x-frame-options") == "DENY"

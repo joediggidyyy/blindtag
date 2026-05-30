@@ -37,10 +37,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Planned
 
-**Pass E** — API security:
-- Add `X-Request-Id` response header to all API responses
-- Add `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` security headers
-- Add `TestSecurityHeaders` class to `tests/test_api.py`
+**Pass E** — COMPLETE (calamum `20260530T225738Z-blindtag-all`, `decision: go`):
+- Added `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `X-Request-Id` (UUID4 per request) response headers via `@app.middleware("http")` in `blindtag/api.py`
+- Added `TestSecurityHeaders` class to `tests/test_api.py` (7 tests: content-type-options on health + encode, frame-options on health + encode, request-id UUID4 format, request-id uniqueness per call, headers present on 422 error responses)
 
 **Pass F** — Code quality:
 - Resolve `test_only_tag_cancel_yields_none_or_empty` ambiguity → `assert result is None`
