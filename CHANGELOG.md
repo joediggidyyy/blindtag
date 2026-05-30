@@ -26,15 +26,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Stale `blindtag/__init__.py` module docstring: widget description updated from `(customtkinter)` to `(PySide6)` (Pass C — `69cdda4`)
 - `README.md`: architecture block and Linux clipboard section updated to reflect PySide6 rewrite (planning pass — `3ab3a26`)
 
-### Planned (see [docs/REVIEW_AND_MATURITY_PLAN.md](docs/REVIEW_AND_MATURITY_PLAN.md) and [docs/WIDGET_SCHEMA.md](docs/WIDGET_SCHEMA.md))
-- **Widget guidance panel** — left-side slide-out `?` panel with collapsed problem-definition cards (Anchor text, Hidden payload, Emoji aliases, Obfuscate & Copy, Clip Watch); see [docs/WIDGET_SCHEMA.md](docs/WIDGET_SCHEMA.md)
-- **Emoji alias selector** — inline `☺` trigger on the Hidden Payload row; floating `QFrame` flyout showing emoji glyphs only (clean grid, no text noise); clicking appends the entry's active alias (printable ASCII) to the payload field
-- **Emoji library editor** — fourth panel in `_stack`, accessible from flyout `Edit library` link; per-entry: glyph display, active alias indicator, `codes` pick list (select active code inline), label, delete; add-entry form accepts emoji + label + comma-separated codes list; all writes go directly to `assets/emoji_library_default.json`
-- `assets/emoji_library_default.json` — 20-entry curated default library, tracked and versioned in the repo, shipped with the package pre-populated including per-emoji `codes` arrays; single working library (no separate user-local copy)
-- Resolve `test_only_tag_cancel_yields_none_or_empty` test ambiguity
-- Add `tests/test_widget.py` (import smoke + plumbing + emoji library + guidance panel)
-- Add `X-Request-Id` response header to API
-- Add security headers to API responses
+### Planned
+
+**Pass D** (see [docs/WIDGET_IMPLEMENTATION_CHECKLIST.md](docs/WIDGET_IMPLEMENTATION_CHECKLIST.md) and [docs/WIDGET_SCHEMA.md](docs/WIDGET_SCHEMA.md)):
+- **Widget guidance panel** — left-side slide-out `?` panel with collapsed problem-definition cards (Anchor text, Hidden payload, Emoji aliases, Obfuscate & Copy, Clip Watch)
+- **Emoji alias selector** — inline `☺` trigger on the Hidden Payload row; floating `QFrame` flyout showing emoji glyphs only; clicking appends the entry's active alias (printable ASCII) to the payload field
+- **Emoji library editor** — fourth panel in `_stack`, accessible from flyout `Edit library` link; per-entry: glyph display, active alias indicator, `codes` pick list, label, delete; add-entry form; all writes go directly to `assets/emoji_library_default.json`
+- `assets/emoji_library_default.json` — 20-entry curated default library, tracked and versioned, shipped pre-populated with `codes` arrays; single working library
+- `blindtag-widget` Calamum test definition added to `catalog/test_definitions.json`
+- `tests/conftest.py` — session-scoped `qapp` fixture for PySide6 widget tests
+- `tests/test_widget.py` — `TestEmojiLibrary` (headless), `TestGuidancePanel`, `TestEmojiFlyout`
+
+**Pass E** — API security:
+- Add `X-Request-Id` response header to all API responses
+- Add `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` security headers
+- Add `TestSecurityHeaders` class to `tests/test_api.py`
+
+**Pass F** — Code quality:
+- Resolve `test_only_tag_cancel_yields_none_or_empty` ambiguity → `assert result is None`
+- Replace `Optional` import with `str | None` union type in `core.py`
+- Add `__all__` export list to `core.py`
 - Add project authors, URLs, and classifiers to `pyproject.toml`
 
 ---

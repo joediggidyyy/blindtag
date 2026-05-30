@@ -268,3 +268,39 @@ No new Python modules. All new UI classes live in `widget.py`.
 | `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking cell appends active alias to payload field |
 
 These are part of the `tests/test_widget.py` work already in Planned. The emoji/guidance implementation should ship as part of the same pass that delivers `test_widget.py`.
+
+---
+
+## Implementation notes (added during planning pass)
+
+These notes resolve gaps identified during plan review. They do not change any design decision in this schema — they specify implementation details that are required for correct, testable, Polymath-aligned code.
+
+### Library file path resolution
+
+`assets/emoji_library_default.json` must be resolved relative to the package, not the working directory:
+
+```python
+_DEFAULT_LIBRARY_PATH = Path(__file__).resolve().parent.parent / "assets" / "emoji_library_default.json"
+```
+
+This resolves correctly when the package is installed in editable mode (`pip install -e .`) or run from any working directory.
+
+### `EmojiLibrary` helper class (headless)
+
+Library load/save/validate logic must be extracted into a standalone `EmojiLibrary` class that accepts an explicit `path` parameter. This is required for:
+- Unit testing add/remove/alias operations without mutating `assets/emoji_library_default.json`
+- Clear separation between library logic (no Qt) and UI classes
+
+`BlindTagWindow.__init__` instantiates `EmojiLibrary(_DEFAULT_LIBRARY_PATH)`. Test classes instantiate `EmojiLibrary(tmp_path / "emoji_library_default.json")` using pytest's `tmp_path` fixture with a copy of the real file.
+
+### PySide6 test architecture
+
+`TestEmojiLibrary` is headless — no Qt dependency, no `QApplication` needed.
+
+`TestGuidancePanel` and `TestEmojiFlyout` require a `QApplication` instance. A session-scoped `qapp` fixture in `tests/conftest.py` provides this without adding any new runtime dependency (PySide6 is already a project dependency).
+
+No `pytest-qt` package is required.
+
+### Write-through test isolation
+
+Tests that call `EmojiLibrary.add_entry`, `EmojiLibrary.remove_entry`, or `EmojiLibrary.set_active_alias` must operate on a temporary copy of the library file. They must never write to `assets/emoji_library_default.json` during a test run. Use `shutil.copy` in the test setup to create a `tmp_path` copy.
