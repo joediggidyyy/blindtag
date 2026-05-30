@@ -33,7 +33,7 @@ from blindtag.core import (
     encode,
     strip_plane14,
 )
-from blindtag.exceptions import InvalidPayloadError
+from blindtag.exceptions import BlindTagError, DecodingError, InvalidPayloadError
 
 
 # =============================================================================
@@ -239,13 +239,14 @@ class TestDecodeNoPayload:
     def test_unicode_non_plane14_returns_none(self) -> None:
         assert decode("日本語テスト مرحبا") is None
 
-    def test_only_tag_cancel_yields_none_or_empty(self) -> None:
+    def test_only_tag_cancel_yields_none(self) -> None:
         """
         TAG_CANCEL with no preceding data characters:
         found_any remains False → None expected.
+        The break fires before any codepoint sets found_any=True.
         """
         result = decode("anchor" + TAG_CANCEL)
-        assert result is None or result == ""
+        assert result is None
 
 
 # =============================================================================
@@ -405,7 +406,34 @@ class TestStripPlane14:
 
 
 # =============================================================================
-# 10. Long payload integrity
+# 10. DecodingError exception hierarchy
+# =============================================================================
+
+class TestDecodingError:
+    """DecodingError is defined in the exception hierarchy for future use."""
+
+    def test_decoding_error_is_blindtag_error_subclass(self) -> None:
+        assert issubclass(DecodingError, BlindTagError)
+
+    def test_decoding_error_is_exception_subclass(self) -> None:
+        assert issubclass(DecodingError, Exception)
+
+    def test_decoding_error_can_be_raised_and_caught(self) -> None:
+        with pytest.raises(DecodingError):
+            raise DecodingError("synthetic decoder failure")
+
+    def test_decoding_error_caught_as_blindtag_error(self) -> None:
+        """BlindTagError is a valid catch-all for all codec exceptions."""
+        with pytest.raises(BlindTagError):
+            raise DecodingError("caught via base class")
+
+    def test_invalid_payload_error_is_blindtag_error_subclass(self) -> None:
+        """Confirm the full hierarchy is consistent."""
+        assert issubclass(InvalidPayloadError, BlindTagError)
+
+
+# =============================================================================
+# 11. Long payload integrity
 # =============================================================================
 
 class TestLongPayloads:

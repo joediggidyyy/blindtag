@@ -198,3 +198,55 @@ class TestDecodeEndpoint:
     def test_decode_detail_message_on_miss(self) -> None:
         r = client.post("/v1/decode", json={"raw_text": "clean text"})
         assert "no" in r.json()["detail"].lower()
+
+
+# =============================================================================
+# CORS policy
+# =============================================================================
+
+class TestCorsPolicy:
+    """
+    CORS is restricted to localhost loopback origins only.
+    Preflight OPTIONS requests from allowed origins must return
+    Access-Control-Allow-Origin; external origins must not be reflected.
+    """
+
+    def test_cors_allowed_origin_localhost(self) -> None:
+        r = client.options(
+            "/v1/encode",
+            headers={
+                "Origin": "http://localhost",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type",
+            },
+        )
+        assert r.headers.get("access-control-allow-origin") == "http://localhost"
+
+    def test_cors_allowed_origin_127(self) -> None:
+        r = client.options(
+            "/v1/encode",
+            headers={
+                "Origin": "http://127.0.0.1",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type",
+            },
+        )
+        assert r.headers.get("access-control-allow-origin") == "http://127.0.0.1"
+
+    def test_cors_external_origin_not_reflected(self) -> None:
+        """External origins must not appear in the allow-origin header."""
+        r = client.options(
+            "/v1/encode",
+            headers={
+                "Origin": "https://evil.example.com",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        origin_header = r.headers.get("access-control-allow-origin", "")
+        assert "evil.example.com" not in origin_header
+
+    def test_cors_simple_get_health_allowed_origin(self) -> None:
+        """Simple GET to /health from an allowed origin gets ACAO header."""
+        r = client.get("/health", headers={"Origin": "http://localhost:8000"})
+        assert r.status_code == 200
+        assert r.headers.get("access-control-allow-origin") == "http://localhost:8000"
