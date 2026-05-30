@@ -66,7 +66,6 @@ from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
-    QComboBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -280,13 +279,15 @@ _CARD_CONTENT: list[tuple[str, str]] = [
         "Hidden payload",
         "The secret message to embed. Must be printable characters "
         "(letters, numbers, punctuation, spaces). Max ~9,000 characters. "
-        "Emojis must be inserted as aliases — use the emoji button next to this field.",
+        "When you pick an emoji from the selector, its alias (e.g. :smile:) "
+        "is automatically appended here alongside the glyph in the anchor text.",
     ),
     (
         "Emoji aliases",
         "Emojis cannot be embedded directly (they are not printable ASCII). "
-        "The emoji selector inserts a short alias like :smile: instead. "
-        "The receiver decodes and sees the alias text. "
+        "The emoji selector inserts the glyph into your visible anchor text and "
+        "simultaneously appends the matching alias into the payload — so the "
+        "receiver decodes the alias and knows which emoji was intended. "
         "You can edit the library to add your own.",
     ),
     (
@@ -326,7 +327,7 @@ class _EmojiCard(QWidget):
         self._body = QLabel(body)
         self._body.setWordWrap(True)
         self._body.setStyleSheet(
-            f"color: {C_MUTED}; font-size: 9pt; background: transparent; padding: 0 4px 4px 14px;"
+            f"color: {C_TEXT}; font-size: 10pt; background: transparent; padding: 0 4px 4px 18px;"
         )
         self._body.setVisible(False)
         layout.addWidget(self._body)
@@ -534,28 +535,21 @@ class _LibraryEditorPanel(QWidget):
         fl.setSpacing(4)
 
         self._add_emoji = QLineEdit()
-        self._add_emoji.setPlaceholderText("\U0001f600")
-        self._add_emoji.setFixedWidth(44)
-        self._add_emoji.setMaxLength(4)  # allow multi-codepoint emoji
+        self._add_emoji.setPlaceholderText("\U0001f60a or :alias:")
         self._add_emoji.setStyleSheet(self._field_style())
 
         self._add_label = QLineEdit()
         self._add_label.setPlaceholderText("label")
-        self._add_label.setFixedWidth(80)
+        self._add_label.setFixedWidth(90)
         self._add_label.setStyleSheet(self._field_style())
-
-        self._add_codes = QLineEdit()
-        self._add_codes.setPlaceholderText(":alias:, ALT")
-        self._add_codes.setStyleSheet(self._field_style())
 
         btn_add = QPushButton("Add")
         btn_add.setStyleSheet(_btn_secondary_style())
         btn_add.setFixedHeight(30)
         btn_add.clicked.connect(self._do_add)
 
-        fl.addWidget(self._add_emoji)
+        fl.addWidget(self._add_emoji, stretch=1)
         fl.addWidget(self._add_label)
-        fl.addWidget(self._add_codes, stretch=1)
         fl.addWidget(btn_add)
         root.addWidget(form_row)
 
@@ -590,37 +584,17 @@ class _LibraryEditorPanel(QWidget):
         hl.setContentsMargins(0, 2, 0, 2)
         hl.setSpacing(6)
 
-        # Glyph
+        # Glyph with tooltip showing active alias
         lbl_glyph = QLabel(entry["emoji"])
         lbl_glyph.setStyleSheet(f"font-size: 14pt; background: transparent; color: {C_TEXT};")
         lbl_glyph.setFixedWidth(28)
+        lbl_glyph.setToolTip(entry["alias"])
         hl.addWidget(lbl_glyph)
-
-        # Active indicator
-        lbl_dot = QLabel("\u25cf")
-        lbl_dot.setStyleSheet(f"color: {C_ACCENT}; background: transparent; font-size: 8pt;")
-        lbl_dot.setFixedWidth(10)
-        hl.addWidget(lbl_dot)
-
-        # Codes picker (QComboBox)
-        combo = QComboBox()
-        combo.setStyleSheet(
-            f"QComboBox {{ background-color: {C_SECONDARY}; color: {C_TEXT}; "
-            f"border: 1px solid #303030; border-radius: 4px; font-size: 9pt; padding: 2px 4px; }}"
-        )
-        combo.addItems(entry["codes"])
-        combo.setCurrentText(entry["alias"])
-        emoji_str = entry["emoji"]
-        combo.currentTextChanged.connect(
-            lambda code, em=emoji_str: self._library.set_active_alias(em, code)
-        )
-        hl.addWidget(combo, stretch=1)
 
         # Label
         lbl_name = QLabel(entry["label"])
         lbl_name.setStyleSheet(f"color: {C_MUTED}; font-size: 9pt; background: transparent;")
-        lbl_name.setFixedWidth(60)
-        hl.addWidget(lbl_name)
+        hl.addWidget(lbl_name, stretch=1)
 
         # Delete button
         btn_del = QPushButton("\u2715")
@@ -636,33 +610,48 @@ class _LibraryEditorPanel(QWidget):
 
     def _do_add(self) -> None:
         self._validation_lbl.setText("")
-        emoji = self._add_emoji.text().strip()
+        raw_input = self._add_emoji.text().strip()
         label = self._add_label.text().strip()
-        raw_codes = self._add_codes.text()
-        codes = [c.strip() for c in raw_codes.split(",") if c.strip()]
 
-        if not emoji:
-            self._validation_lbl.setText("Emoji is required.")
+        if not raw_input:
+            self._validation_lbl.setText("Emoji or code is required.")
             self._add_emoji.setStyleSheet(self._field_style(invalid=True))
             return
-        if not codes:
-            self._validation_lbl.setText("At least one code is required.")
-            self._add_codes.setStyleSheet(self._field_style(invalid=True))
+        if not label:
+            self._validation_lbl.setText("Label is required.")
+            self._add_label.setStyleSheet(self._field_style(invalid=True))
             return
-        if not EmojiLibrary.validate_codes(codes):
-            self._validation_lbl.setText("Codes must be printable ASCII only.")
-            self._add_codes.setStyleSheet(self._field_style(invalid=True))
-            return
+
+        # Detect glyph vs code string
+        is_glyph = any(ord(c) > 0x7E for c in raw_input)
+        if is_glyph:
+            emoji_val = raw_input
+            alias = f":{label.lower().replace(' ', '_')}:"
+        else:
+            # Code string — must be printable ASCII; try to resolve glyph from library
+            if not _CODE_RE.match(raw_input):
+                self._validation_lbl.setText("Code must be printable ASCII only.")
+                self._add_emoji.setStyleSheet(self._field_style(invalid=True))
+                return
+            alias = raw_input
+            existing = self._library.load()
+            glyph_match = next(
+                (e["emoji"] for e in existing if raw_input in e["codes"]), None
+            )
+            if not glyph_match:
+                self._validation_lbl.setText("Code not in library — paste the emoji glyph instead.")
+                self._add_emoji.setStyleSheet(self._field_style(invalid=True))
+                return
+            emoji_val = glyph_match
 
         # Reset field borders
         self._add_emoji.setStyleSheet(self._field_style())
-        self._add_codes.setStyleSheet(self._field_style())
+        self._add_label.setStyleSheet(self._field_style())
 
-        entry = {"emoji": emoji, "alias": codes[0], "codes": codes, "label": label or emoji}
+        entry = {"emoji": emoji_val, "alias": alias, "codes": [alias], "label": label}
         self._library.add_entry(entry)
         self._add_emoji.clear()
         self._add_label.clear()
-        self._add_codes.clear()
         self.refresh()
 
     def _do_delete(self, emoji: str) -> None:
@@ -769,7 +758,7 @@ class BlindTagWindow(QMainWindow):
         self.resize(530, 555)
         self.setWindowOpacity(0.96)
 
-        icon_path = _ASSETS_DIR / "blindtag_logo.png"
+        icon_path = _ASSETS_DIR / "blindtag_thumbnail_basic.png"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
@@ -863,23 +852,23 @@ class BlindTagWindow(QMainWindow):
         layout.setContentsMargins(16, 0, 16, 0)
         layout.setSpacing(0)
 
-        layout.addWidget(self._section_label("ANCHOR TEXT  ·  visible cover"))
-        self._anchor_input = self._make_textbox(82)
-        layout.addWidget(self._anchor_input)
-
-        # HIDDEN PAYLOAD row with emoji trigger
-        payload_row = QWidget()
-        payload_row.setStyleSheet("background: transparent;")
-        pr = QHBoxLayout(payload_row)
-        pr.setContentsMargins(0, 0, 0, 0)
-        pr.setSpacing(4)
-        pr.addWidget(self._section_label("HIDDEN PAYLOAD  \u00b7  printable ASCII only"), stretch=1)
+        # ANCHOR TEXT row with emoji trigger
+        anchor_row = QWidget()
+        anchor_row.setStyleSheet("background: transparent;")
+        ar = QHBoxLayout(anchor_row)
+        ar.setContentsMargins(0, 0, 0, 0)
+        ar.setSpacing(4)
+        ar.addWidget(self._section_label("ANCHOR TEXT  \u00b7  visible cover"), stretch=1)
         self._btn_emoji = QPushButton("\u263a")
         self._btn_emoji.setFixedSize(26, 26)
         self._btn_emoji.setStyleSheet(_btn_ghost_style())
         self._btn_emoji.clicked.connect(self._open_emoji_flyout)
-        pr.addWidget(self._btn_emoji)
-        layout.addWidget(payload_row)
+        ar.addWidget(self._btn_emoji)
+        layout.addWidget(anchor_row)
+        self._anchor_input = self._make_textbox(82)
+        layout.addWidget(self._anchor_input)
+
+        layout.addWidget(self._section_label("HIDDEN PAYLOAD  \u00b7  printable ASCII only"))
 
         self._hidden_input = self._make_textbox(68)
         layout.addWidget(self._hidden_input)
@@ -1082,9 +1071,16 @@ class BlindTagWindow(QMainWindow):
         self._emoji_flyout.raise_()
 
     def _insert_alias(self, alias: str) -> None:
-        cursor = self._hidden_input.textCursor()
-        cursor.insertText(alias)
-        self._hidden_input.setTextCursor(cursor)
+        # Dual-field insert: glyph -> anchor, alias -> hidden payload
+        entries = self._library.load()
+        glyph = next((e["emoji"] for e in entries if e["alias"] == alias), None)
+        if glyph:
+            anchor_cur = self._anchor_input.textCursor()
+            anchor_cur.insertText(glyph)
+            self._anchor_input.setTextCursor(anchor_cur)
+        payload_cur = self._hidden_input.textCursor()
+        payload_cur.insertText(alias)
+        self._hidden_input.setTextCursor(payload_cur)
 
     def _open_library_editor(self) -> None:
         if self._emoji_flyout is not None:

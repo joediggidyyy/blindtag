@@ -189,14 +189,25 @@ class TestEmojiFlyout:
 
     def test_click_appends_alias(self, qapp) -> None:
         from PySide6.QtWidgets import QPushButton
+        from blindtag.widget import BlindTagWindow
         lib = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
         entries = lib.load()
-        flyout = self._make_flyout(qapp)
-        # Emoji buttons have toolTip set to the alias
+        first_entry = entries[0]
+
+        win = BlindTagWindow()
+        win._open_emoji_flyout()
+
         emoji_btns = [
-            b for b in flyout.findChildren(QPushButton)
+            b for b in win._emoji_flyout.findChildren(QPushButton)
             if b.toolTip() != ""
         ]
-        # Click the first cell
         emoji_btns[0].click()
-        assert self._last_alias == entries[0]["alias"]
+
+        anchor_text = win._anchor_input.toPlainText()
+        payload_text = win._hidden_input.toPlainText()
+        assert first_entry["emoji"] in anchor_text, (
+            f"expected glyph {first_entry['emoji']!r} in anchor field, got {anchor_text!r}"
+        )
+        assert first_entry["alias"] in payload_text, (
+            f"expected alias {first_entry['alias']!r} in payload field, got {payload_text!r}"
+        )
