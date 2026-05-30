@@ -15,7 +15,13 @@ build/
 .venv/
 venv/
 env/
+
+# Secrets / local config
 .env
+.env.*
+!.env.example
+secrets/
+*.secret
 
 # Coverage
 .coverage
@@ -41,3 +47,14 @@ Thumbs.db
 
 # Distribution
 MANIFEST
+
+# Agent instructions (internal operational files — not for public tracking)
+AGENT_INSTRUCTIONS.md
+AGENT_INSTRUCTIONS.json
+CLAUDE.md
+.agent_session/
+
+# Local working files
+local_untracked/
+logs/
+semantics_staging/

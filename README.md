@@ -2,6 +2,8 @@
 
 > Unicode Plane 14 Steganographic Obfuscation Toolkit
 
+A [Polymath](https://polymath-global.com) open-source project.
+
 BlindTag embeds invisible payloads inside ordinary Unicode text using characters from the **Tags block** (U+E0000–U+E007F) in Unicode Plane 14. The result is visually indistinguishable from the original string and survives NFC / NFD / NFKC / NFKD normalization intact.
 
 ---
@@ -9,7 +11,7 @@ BlindTag embeds invisible payloads inside ordinary Unicode text using characters
 ## Architecture
 
 ```
-blindtag-project/
+blindtag/
 ├── blindtag/
 │   ├── __init__.py        Public API surface
 │   ├── core.py            Codec engine — encode / decode / strip_plane14
@@ -56,8 +58,8 @@ Decode:  plane14_codepoint  - 0xE0000  →  ord(ascii_char)
 ### From source (recommended)
 
 ```bash
-git clone https://github.com/your-org/blindtag.git
-cd blindtag-project
+git clone https://github.com/joediggidyyy/blindtag.git
+cd blindtag
 
 # Runtime only
 pip install -e .
@@ -70,7 +72,7 @@ pip install -e ".[dev]"
 
 ```bash
 pip install -r requirements.txt       # runtime
-pip install -r requirements-dev.txt   # + pytest, httpx, coverage
+pip install -e ".[dev]"               # + pytest, httpx, coverage
 ```
 
 **Python requirement:** 3.11 or later.
@@ -327,3 +329,7 @@ pytest --cov=blindtag --cov-report=term-missing
 ## License
 
 MIT — see `LICENSE` for details.
+
+---
+
+*BlindTag is developed and maintained by [Polymath](https://polymath-global.com).*
