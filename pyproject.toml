@@ -37,10 +37,8 @@ dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.7.0",
-    # Widget & clipboard
-    "customtkinter>=5.2.2",
-    "Pillow>=10.0.0",
-    "pyperclip>=1.8.2",
+    # Widget
+    "PySide6>=6.8,<7",
 ]
 
 [project.optional-dependencies]

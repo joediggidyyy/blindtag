@@ -44,26 +44,36 @@ Hotkeys
 
 Clipboard Watcher
 -----------------
-When active, a daemon thread polls the system clipboard every 800 ms.
-If new content contains a Plane 14 tag payload, the widget surfaces a
-notification overlay, switches to the Decode panel, and auto-populates
-the output field. No data leaves the local machine.
+When active, the Qt clipboard dataChanged signal fires on every clipboard
+update. If new content contains a Plane 14 tag payload, the widget surfaces
+a notification overlay, switches to the Decode panel, and auto-populates the
+output field. No data leaves the local machine.
 
-Dependencies: customtkinter >= 5.2.2, pyperclip >= 1.8.2
+Dependencies: PySide6 >= 6.8
 """
 
 from __future__ import annotations
 
-import threading
-import time
+import sys
 from pathlib import Path
 from typing import Optional
 
-import customtkinter as ctk
-import pyperclip
-from PIL import Image
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QStackedWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-from .core import decode, encode, strip_plane14
+from .core import decode, encode
 from .exceptions import InvalidPayloadError
 
 # ─── Asset paths ──────────────────────────────────────────────────────────────
@@ -83,354 +93,401 @@ C_SUCCESS   = "#4CAF6E"   # Confirmation Green
 C_WARNING   = "#E8A838"   # Amber Alert
 C_ERROR     = "#E85555"   # Alert Red
 
-# ─── Typography ───────────────────────────────────────────────────────────────
-
-FONT_MONO  = ("Courier New", 11)
-FONT_UI    = ("Segoe UI",     10)
-FONT_LABEL = ("Segoe UI",      9)
-FONT_TITLE = ("Segoe UI",     12, "bold")
-FONT_SMALL = ("Segoe UI",      8)
-
 # ─── Timing ───────────────────────────────────────────────────────────────────
 
-CLIPBOARD_POLL_MS: int = 800   # Clipboard watcher poll interval (milliseconds)
 NOTIFY_DURATION_MS: int = 4_500  # Notification overlay auto-dismiss duration
+
+# ─── Stylesheet helpers ───────────────────────────────────────────────────────
+
+_APP_STYLESHEET = f"""
+QWidget {{
+    background-color: {C_BG};
+    color: {C_TEXT};
+    font-family: "Segoe UI";
+    font-size: 10pt;
+}}
+"""
+
+
+def _textbox_style(color: str = C_TEXT, bg: str = C_SECONDARY) -> str:
+    return (
+        f"QTextEdit {{"
+        f"background-color: {bg}; color: {color}; "
+        f"border: 1px solid #303030; border-radius: 6px; "
+        f"font-family: 'Courier New'; font-size: 11pt; padding: 4px;"
+        f"}}"
+    )
+
+
+def _btn_primary_style() -> str:
+    return (
+        f"QPushButton {{"
+        f"background-color: {C_ACCENT}; color: #FFFFFF; "
+        f"font-weight: bold; border: none; border-radius: 6px; padding: 8px 12px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: {C_ACCENT_H}; }}"
+    )
+
+
+def _btn_secondary_style() -> str:
+    return (
+        f"QPushButton {{"
+        f"background-color: {C_SURFACE}; color: {C_TEXT}; "
+        f"border: none; border-radius: 6px; padding: 8px 12px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: #333333; }}"
+    )
+
+
+def _btn_ghost_style() -> str:
+    return (
+        f"QPushButton {{"
+        f"background-color: transparent; color: {C_MUTED}; "
+        f"border: none; border-radius: 6px; font-size: 9pt; padding: 4px 8px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: {C_SURFACE}; }}"
+    )
+
+
+def _toggle_active_style() -> str:
+    return (
+        f"QPushButton {{"
+        f"background-color: {C_ACCENT}; color: #FFFFFF; "
+        f"border: none; border-radius: 4px; padding: 6px 18px;"
+        f"}}"
+    )
+
+
+def _toggle_inactive_style() -> str:
+    return (
+        f"QPushButton {{"
+        f"background-color: {C_SURFACE}; color: {C_TEXT}; "
+        f"border: none; border-radius: 4px; padding: 6px 18px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: #2C2C2C; }}"
+    )
+
+
+# ─── Title bar ────────────────────────────────────────────────────────────────
+
+class _TitleBar(QWidget):
+    """Custom draggable title bar."""
+
+    def __init__(self, parent: "BlindTagWindow") -> None:
+        super().__init__(parent)
+        self._win = parent
+        self._drag_pos = None
+        self.setFixedHeight(40)
+        self.setStyleSheet(f"background-color: {C_SECONDARY};")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 0, 6, 0)
+        layout.setSpacing(4)
+
+        # Logo icon (graceful fallback if file absent)
+        logo_path = _ASSETS_DIR / "blindtag_logo.png"
+        if logo_path.exists():
+            pix = QPixmap(str(logo_path)).scaled(
+                28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            lbl_icon = QLabel()
+            lbl_icon.setPixmap(pix)
+            lbl_icon.setFixedSize(28, 28)
+            lbl_icon.setStyleSheet("background: transparent;")
+            layout.addWidget(lbl_icon)
+
+        # Title text
+        lbl_title = QLabel("BlindTag")
+        lbl_title.setStyleSheet(
+            f"color: {C_ACCENT}; font-size: 12pt; font-weight: bold; background: transparent;"
+        )
+        layout.addWidget(lbl_title)
+        layout.addStretch()
+
+        # Minimize button
+        btn_min = QPushButton("─")
+        btn_min.setFixedSize(30, 26)
+        btn_min.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {C_MUTED}; border: none; }}"
+            f"QPushButton:hover {{ background-color: {C_SURFACE}; }}"
+        )
+        btn_min.clicked.connect(parent.showMinimized)
+        layout.addWidget(btn_min)
+
+        # Close button
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(30, 26)
+        btn_close.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {C_MUTED}; border: none; }}"
+            f"QPushButton:hover {{ background-color: {C_ERROR}; color: white; }}"
+        )
+        btn_close.clicked.connect(parent.close)
+        layout.addWidget(btn_close)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint()
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._drag_pos is not None and event.buttons() & Qt.LeftButton:
+            delta = event.globalPosition().toPoint() - self._drag_pos
+            self._win.move(self._win.pos() + delta)
+            self._drag_pos = event.globalPosition().toPoint()
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._drag_pos = None
 
 
 # ─── Main widget ──────────────────────────────────────────────────────────────
 
-class BlindTagWidget(ctk.CTk):
+class BlindTagWindow(QMainWindow):
     """
     BlindTag observer widget — the primary user-facing interface.
 
-    Inherits from ``ctk.CTk`` (customtkinter root window).
-    Instantiate and call ``.mainloop()`` to run:
+    Instantiate via ``run_widget()`` or directly:
 
-        widget = BlindTagWidget()
-        widget.mainloop()
+        app = QApplication(sys.argv)
+        win = BlindTagWindow()
+        win.show()
+        sys.exit(app.exec())
     """
 
     def __init__(self) -> None:
         super().__init__()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        self.setWindowTitle("BlindTag")
+        self.setMinimumSize(480, 480)
+        self.resize(530, 555)
+        self.setWindowOpacity(0.96)
 
-        # ── Appearance ──────────────────────────────────────────────────────
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
+        icon_path = _ASSETS_DIR / "blindtag_logo.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
-        # ── Load logo ───────────────────────────────────────────────────────
-        logo_path = _ASSETS_DIR / "blindtag_logo.png"
-        if logo_path.exists():
-            _pil = Image.open(logo_path)
-            self._logo_img: Optional[ctk.CTkImage] = ctk.CTkImage(
-                light_image=_pil, dark_image=_pil, size=(28, 28)
-            )
-        else:
-            self._logo_img = None
-
-        # ── Window configuration ────────────────────────────────────────────
-        self.title("BlindTag")
-        self.geometry("530x555")
-        self.minsize(480, 480)
-        self.configure(fg_color=C_BG)
-        self.attributes("-alpha", 0.96)
-        self.resizable(True, True)
-
-        # ── Runtime state ───────────────────────────────────────────────────
+        # Runtime state
         self._current_panel: str = "encode"
-        self._clipboard_active: bool = False
-        self._last_clipboard: str = ""
-        self._watcher_thread: Optional[threading.Thread] = None
-        self._notify_frame: Optional[ctk.CTkFrame] = None
+        self._watcher_active: bool = False
+        self._notify_widget: Optional[QWidget] = None
+        self._notify_timer = QTimer(self)
+        self._notify_timer.setSingleShot(True)
+        self._notify_timer.timeout.connect(self._dismiss_notify)
 
-        # Window drag state
-        self._drag_start_x: int = 0
-        self._drag_start_y: int = 0
+        # Build UI
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # ── Build UI ────────────────────────────────────────────────────────
-        self._build_title_bar()
-        self._build_panel_toggle()
-        self._build_encode_panel()
-        self._build_decode_panel()
-        self._build_status_bar()
+        root.addWidget(_TitleBar(self))
+        root.addWidget(self._build_toggle_strip())
+
+        self._stack = QStackedWidget()
+        root.addWidget(self._stack, stretch=1)
+
+        self._encode_panel = self._build_encode_panel()
+        self._decode_panel = self._build_decode_panel()
+        self._stack.addWidget(self._encode_panel)
+        self._stack.addWidget(self._decode_panel)
+
+        root.addWidget(self._build_status_bar())
 
         self._bind_hotkeys()
-        self._show_encode()          # Default panel on launch
+        self._show_encode()
 
     # =========================================================================
     # UI Construction
     # =========================================================================
 
-    def _build_title_bar(self) -> None:
-        """Custom draggable title bar with logo and window controls."""
-        bar = ctk.CTkFrame(self, fg_color=C_SECONDARY, height=40, corner_radius=0)
-        bar.pack(fill="x", side="top")
-        bar.pack_propagate(False)
+    def _build_toggle_strip(self) -> QWidget:
+        strip = QWidget()
+        strip.setFixedHeight(46)
+        strip.setStyleSheet(f"background-color: {C_SECONDARY};")
+        layout = QHBoxLayout(strip)
+        layout.setContentsMargins(14, 8, 14, 8)
+        layout.setSpacing(6)
 
-        if self._logo_img is not None:
-            logo_icon = ctk.CTkLabel(
-                bar, image=self._logo_img, text="",
-                width=28, height=28,
-            )
-            logo_icon.pack(side="left", padx=(12, 4), pady=6)
-            for widget in (bar, logo_icon):
-                widget.bind("<ButtonPress-1>",  self._drag_start)
-                widget.bind("<B1-Motion>",       self._drag_motion)
+        self._btn_encode = QPushButton("  Encode  ")
+        self._btn_encode.clicked.connect(self._show_encode)
+        layout.addWidget(self._btn_encode)
 
-        logo = ctk.CTkLabel(
-            bar, text="BlindTag" if self._logo_img is not None else "⬡  BlindTag",
-            font=FONT_TITLE, text_color=C_ACCENT,
+        self._btn_decode = QPushButton("  Decode  ")
+        self._btn_decode.clicked.connect(self._show_decode)
+        layout.addWidget(self._btn_decode)
+
+        layout.addStretch()
+
+        self._watcher_chk = QCheckBox(" Clip Watch")
+        self._watcher_chk.setStyleSheet(
+            f"QCheckBox {{ color: {C_MUTED}; font-size: 9pt; spacing: 6px; }}"
+            f"QCheckBox::indicator {{ width: 16px; height: 16px; "
+            f"border: 1px solid {C_MUTED}; border-radius: 3px; background: transparent; }}"
+            f"QCheckBox::indicator:checked {{ background-color: {C_ACCENT}; border-color: {C_ACCENT}; }}"
         )
-        logo.pack(side="left", padx=(0 if self._logo_img is not None else 14), pady=8)
+        self._watcher_chk.stateChanged.connect(self._toggle_watcher)
+        layout.addWidget(self._watcher_chk)
 
-        # Window controls (right-aligned)
-        ctrl = ctk.CTkFrame(bar, fg_color="transparent")
-        ctrl.pack(side="right", padx=6)
+        return strip
 
-        ctk.CTkButton(
-            ctrl, text="✕", width=30, height=26,
-            fg_color="transparent", hover_color=C_ERROR,
-            text_color=C_MUTED, font=("Segoe UI", 12),
-            corner_radius=4, command=self._on_close,
-        ).pack(side="right", padx=2, pady=4)
+    def _build_encode_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setSpacing(0)
 
-        ctk.CTkButton(
-            ctrl, text="─", width=30, height=26,
-            fg_color="transparent", hover_color=C_SURFACE,
-            text_color=C_MUTED, font=("Segoe UI", 12),
-            corner_radius=4, command=self._minimize,
-        ).pack(side="right", padx=2, pady=4)
+        layout.addWidget(self._section_label("ANCHOR TEXT  ·  visible cover"))
+        self._anchor_input = self._make_textbox(82)
+        layout.addWidget(self._anchor_input)
 
-        # Bind window drag to title bar and logo
-        for widget in (bar, logo):
-            widget.bind("<ButtonPress-1>",   self._drag_start)
-            widget.bind("<B1-Motion>",        self._drag_motion)
+        layout.addWidget(self._section_label("HIDDEN PAYLOAD  ·  printable ASCII only"))
+        self._hidden_input = self._make_textbox(68)
+        layout.addWidget(self._hidden_input)
 
-    def _build_panel_toggle(self) -> None:
-        """Encode/Decode segmented toggle strip with Clipboard Watcher checkbox."""
-        strip = ctk.CTkFrame(self, fg_color=C_SECONDARY, height=46, corner_radius=0)
-        strip.pack(fill="x")
-        strip.pack_propagate(False)
+        layout.addWidget(self._section_label("OUTPUT  ·  steganographic composite"))
+        self._encode_output = self._make_textbox(82, readonly=True)
+        layout.addWidget(self._encode_output)
 
-        self._toggle = ctk.CTkSegmentedButton(
-            strip,
-            values=["  Encode  ", "  Decode  "],
-            command=self._on_panel_toggle,
-            fg_color=C_SURFACE,
-            selected_color=C_ACCENT,
-            selected_hover_color=C_ACCENT_H,
-            unselected_color=C_SURFACE,
-            unselected_hover_color="#2C2C2C",
-            text_color=C_TEXT,
-            font=FONT_UI,
-            height=30,
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 4, 0, 4)
+        row_layout.setSpacing(6)
+
+        btn_encode = QPushButton("Encode")
+        btn_encode.setStyleSheet(_btn_secondary_style())
+        btn_encode.setFixedHeight(36)
+        btn_encode.clicked.connect(self._do_encode)
+        row_layout.addWidget(btn_encode)
+
+        btn_obf = QPushButton("⬡  Obfuscate & Copy")
+        btn_obf.setStyleSheet(_btn_primary_style())
+        btn_obf.setFixedHeight(36)
+        btn_obf.clicked.connect(self._encode_and_copy)
+        row_layout.addWidget(btn_obf)
+
+        layout.addWidget(row)
+
+        btn_clear = QPushButton("Clear All")
+        btn_clear.setStyleSheet(_btn_ghost_style())
+        btn_clear.setFixedHeight(24)
+        btn_clear.clicked.connect(self._clear_encode)
+        layout.addWidget(btn_clear, alignment=Qt.AlignCenter)
+
+        layout.addStretch()
+        return panel
+
+    def _build_decode_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setSpacing(0)
+
+        layout.addWidget(
+            self._section_label("RAW TEXT INPUT  ·  paste steganographic content here")
         )
-        self._toggle.set("  Encode  ")
-        self._toggle.pack(side="left", padx=14, pady=8)
+        self._raw_input = self._make_textbox(140)
+        layout.addWidget(self._raw_input)
 
-        # Clipboard watcher toggle (right side)
-        self._watcher_var = ctk.BooleanVar(value=False)
-        self._watcher_chk = ctk.CTkCheckBox(
-            strip,
-            text=" Clip Watch",
-            variable=self._watcher_var,
-            command=self._toggle_watcher,
-            font=FONT_LABEL,
-            text_color=C_MUTED,
-            fg_color=C_ACCENT,
-            hover_color=C_ACCENT_H,
-            checkmark_color="#FFFFFF",
-            border_color=C_MUTED,
-            width=16, height=16,
-            checkbox_height=16, checkbox_width=16,
+        layout.addWidget(self._section_label("EXTRACTED PAYLOAD"))
+        self._decode_output = self._make_textbox(120, readonly=True)
+        layout.addWidget(self._decode_output)
+
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 4, 0, 4)
+        row_layout.setSpacing(6)
+
+        btn_decode = QPushButton("Decode")
+        btn_decode.setStyleSheet(_btn_secondary_style())
+        btn_decode.setFixedHeight(36)
+        btn_decode.clicked.connect(self._do_decode)
+        row_layout.addWidget(btn_decode)
+
+        btn_paste = QPushButton("⬇  Paste & Decode")
+        btn_paste.setStyleSheet(_btn_primary_style())
+        btn_paste.setFixedHeight(36)
+        btn_paste.clicked.connect(self._paste_and_decode)
+        row_layout.addWidget(btn_paste)
+
+        layout.addWidget(row)
+
+        btn_clear = QPushButton("Clear All")
+        btn_clear.setStyleSheet(_btn_ghost_style())
+        btn_clear.setFixedHeight(24)
+        btn_clear.clicked.connect(self._clear_decode)
+        layout.addWidget(btn_clear, alignment=Qt.AlignCenter)
+
+        layout.addStretch()
+        return panel
+
+    def _build_status_bar(self) -> QWidget:
+        bar = QWidget()
+        bar.setFixedHeight(28)
+        bar.setStyleSheet(f"background-color: {C_SECONDARY};")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(12, 0, 12, 0)
+
+        self._status_label = QLabel(
+            "Ready  ·  Ctrl+E: Encode  ·  Ctrl+D: Decode  ·  Ctrl+W: Watcher"
         )
-        self._watcher_chk.pack(side="right", padx=14)
-
-    def _build_encode_panel(self) -> None:
-        """Encode surface panel — anchor + hidden message → tagged output."""
-        self._encode_frame = ctk.CTkFrame(self, fg_color=C_BG, corner_radius=0)
-
-        # ── Anchor text input ──────────────────────────────────────────────
-        self._section_label(self._encode_frame, "ANCHOR TEXT  ·  visible cover")
-        self._anchor_input = self._textbox(
-            self._encode_frame, height=82, readonly=False
+        self._status_label.setStyleSheet(
+            f"color: {C_MUTED}; font-size: 9pt; background: transparent;"
         )
+        layout.addWidget(self._status_label)
+        layout.addStretch()
 
-        # ── Hidden payload input ───────────────────────────────────────────
-        self._section_label(self._encode_frame, "HIDDEN PAYLOAD  ·  printable ASCII only")
-        self._hidden_input = self._textbox(
-            self._encode_frame, height=68, readonly=False
+        self._indicator = QLabel("●")
+        self._indicator.setStyleSheet(
+            f"color: {C_SURFACE}; font-size: 10pt; background: transparent;"
         )
+        layout.addWidget(self._indicator)
 
-        # ── Output ────────────────────────────────────────────────────────
-        self._section_label(self._encode_frame, "OUTPUT  ·  steganographic composite")
-        self._encode_output = self._textbox(
-            self._encode_frame, height=82, readonly=True, bg=C_SURFACE
-        )
-
-        # ── Action row ────────────────────────────────────────────────────
-        row = ctk.CTkFrame(self._encode_frame, fg_color="transparent")
-        row.pack(fill="x", padx=16, pady=(0, 4))
-
-        ctk.CTkButton(
-            row, text="Encode",
-            fg_color=C_SURFACE, hover_color="#333333",
-            text_color=C_TEXT, font=FONT_UI, height=36,
-            corner_radius=6, command=self._do_encode,
-        ).pack(side="left", expand=True, fill="x", padx=(0, 6))
-
-        ctk.CTkButton(
-            row, text="⬡  Obfuscate & Copy",
-            fg_color=C_ACCENT, hover_color=C_ACCENT_H,
-            text_color="#FFFFFF", font=(FONT_UI[0], FONT_UI[1], "bold"),
-            height=36, corner_radius=6, command=self._encode_and_copy,
-        ).pack(side="right", expand=True, fill="x")
-
-        # ── Clear ─────────────────────────────────────────────────────────
-        ctk.CTkButton(
-            self._encode_frame, text="Clear All",
-            fg_color="transparent", hover_color=C_SURFACE,
-            text_color=C_MUTED, font=FONT_LABEL, height=24,
-            command=self._clear_encode,
-        ).pack(pady=(2, 8))
-
-    def _build_decode_panel(self) -> None:
-        """Decode surface panel — raw input → extracted payload."""
-        self._decode_frame = ctk.CTkFrame(self, fg_color=C_BG, corner_radius=0)
-
-        # ── Raw text input ────────────────────────────────────────────────
-        self._section_label(
-            self._decode_frame,
-            "RAW TEXT INPUT  ·  paste steganographic content here",
-        )
-        self._raw_input = self._textbox(
-            self._decode_frame, height=140, readonly=False
-        )
-
-        # ── Extracted payload output ──────────────────────────────────────
-        self._section_label(self._decode_frame, "EXTRACTED PAYLOAD")
-        self._decode_output = self._textbox(
-            self._decode_frame, height=120, readonly=True,
-            bg=C_SURFACE, text_color=C_SUCCESS,
-        )
-
-        # ── Action row ────────────────────────────────────────────────────
-        row = ctk.CTkFrame(self._decode_frame, fg_color="transparent")
-        row.pack(fill="x", padx=16, pady=(0, 4))
-
-        ctk.CTkButton(
-            row, text="Decode",
-            fg_color=C_SURFACE, hover_color="#333333",
-            text_color=C_TEXT, font=FONT_UI, height=36,
-            corner_radius=6, command=self._do_decode,
-        ).pack(side="left", expand=True, fill="x", padx=(0, 6))
-
-        ctk.CTkButton(
-            row, text="⬇  Paste & Decode",
-            fg_color=C_ACCENT, hover_color=C_ACCENT_H,
-            text_color="#FFFFFF", font=(FONT_UI[0], FONT_UI[1], "bold"),
-            height=36, corner_radius=6, command=self._paste_and_decode,
-        ).pack(side="right", expand=True, fill="x")
-
-        ctk.CTkButton(
-            self._decode_frame, text="Clear All",
-            fg_color="transparent", hover_color=C_SURFACE,
-            text_color=C_MUTED, font=FONT_LABEL, height=24,
-            command=self._clear_decode,
-        ).pack(pady=(2, 8))
-
-    def _build_status_bar(self) -> None:
-        """Bottom status bar — status text and watcher activity indicator."""
-        bar = ctk.CTkFrame(self, fg_color=C_SECONDARY, height=28, corner_radius=0)
-        bar.pack(fill="x", side="bottom")
-        bar.pack_propagate(False)
-
-        self._status_label = ctk.CTkLabel(
-            bar,
-            text=(
-                "Ready  ·  Ctrl+E: Encode  "
-                "·  Ctrl+D: Decode  ·  Ctrl+W: Watcher"
-            ),
-            font=FONT_SMALL, text_color=C_MUTED, anchor="w",
-        )
-        self._status_label.pack(side="left", padx=12, pady=4)
-
-        # Watcher activity dot (right edge)
-        self._indicator = ctk.CTkLabel(
-            bar, text="●", font=("Segoe UI", 10), text_color=C_SURFACE,
-        )
-        self._indicator.pack(side="right", padx=12)
+        return bar
 
     # =========================================================================
     # Shared UI helpers
     # =========================================================================
 
     @staticmethod
-    def _section_label(parent: ctk.CTkFrame, text: str) -> None:
-        ctk.CTkLabel(
-            parent, text=text,
-            font=FONT_LABEL, text_color=C_MUTED, anchor="w",
-        ).pack(fill="x", padx=16, pady=(12, 3))
-
-    @staticmethod
-    def _textbox(
-        parent: ctk.CTkFrame,
-        height: int,
-        readonly: bool = False,
-        bg: str = C_SECONDARY,
-        text_color: str = C_TEXT,
-    ) -> ctk.CTkTextbox:
-        tb = ctk.CTkTextbox(
-            parent,
-            height=height,
-            fg_color=bg,
-            text_color=text_color,
-            font=FONT_MONO,
-            border_width=1,
-            border_color="#303030",
-            corner_radius=6,
-            wrap="word",
-            state="disabled" if readonly else "normal",
+    def _section_label(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet(
+            f"color: {C_MUTED}; font-size: 9pt; "
+            f"padding-top: 12px; padding-bottom: 3px; background: transparent;"
         )
-        tb.pack(fill="x", padx=16, pady=(0, 4))
-        return tb
+        return lbl
 
     @staticmethod
-    def _write_textbox(widget: ctk.CTkTextbox, content: str) -> None:
-        """Unlock, replace content, re-lock (safe for read-only textboxes)."""
-        widget.configure(state="normal")
-        widget.delete("1.0", "end")
-        if content:
-            widget.insert("1.0", content)
-        widget.configure(state="disabled")
+    def _make_textbox(height: int, readonly: bool = False) -> QTextEdit:
+        tb = QTextEdit()
+        tb.setFixedHeight(height)
+        tb.setReadOnly(readonly)
+        bg = C_SURFACE if readonly else C_SECONDARY
+        tb.setStyleSheet(_textbox_style(C_TEXT, bg))
+        return tb
 
     # =========================================================================
     # Panel switching
     # =========================================================================
 
     def _show_encode(self) -> None:
-        self._decode_frame.pack_forget()
-        self._encode_frame.pack(fill="both", expand=True)
+        self._stack.setCurrentWidget(self._encode_panel)
         self._current_panel = "encode"
+        self._btn_encode.setStyleSheet(_toggle_active_style())
+        self._btn_decode.setStyleSheet(_toggle_inactive_style())
 
     def _show_decode(self) -> None:
-        self._encode_frame.pack_forget()
-        self._decode_frame.pack(fill="both", expand=True)
+        self._stack.setCurrentWidget(self._decode_panel)
         self._current_panel = "decode"
-
-    def _on_panel_toggle(self, value: str) -> None:
-        if "Encode" in value:
-            self._show_encode()
-        else:
-            self._show_decode()
+        self._btn_encode.setStyleSheet(_toggle_inactive_style())
+        self._btn_decode.setStyleSheet(_toggle_active_style())
 
     # =========================================================================
     # Core actions
     # =========================================================================
 
     def _do_encode(self) -> None:
-        """Validate inputs and run the codec encoder."""
-        anchor = self._anchor_input.get("1.0", "end-1c").strip()
-        hidden = self._hidden_input.get("1.0", "end-1c").strip()
+        anchor = self._anchor_input.toPlainText().strip()
+        hidden = self._hidden_input.toPlainText().strip()
 
         if not anchor:
             self._set_status("⚠  Anchor text is required.", C_WARNING)
@@ -441,14 +498,11 @@ class BlindTagWidget(ctk.CTk):
 
         try:
             result = encode(anchor, hidden)
-        except InvalidPayloadError as exc:
-            self._set_status(f"✕  {exc}", C_ERROR)
-            return
-        except ValueError as exc:
+        except (InvalidPayloadError, ValueError) as exc:
             self._set_status(f"✕  {exc}", C_ERROR)
             return
 
-        self._write_textbox(self._encode_output, result)
+        self._encode_output.setPlainText(result)
         self._set_status(
             f"✓  Encoded {len(hidden)} char payload into "
             f"{len(anchor)} char anchor  ({len(result)} total chars).",
@@ -456,20 +510,15 @@ class BlindTagWidget(ctk.CTk):
         )
 
     def _encode_and_copy(self) -> None:
-        """Encode and push result directly to system clipboard."""
         self._do_encode()
-        result = self._encode_output.get("1.0", "end-1c")
+        result = self._encode_output.toPlainText()
         if not result:
             return
-        try:
-            pyperclip.copy(result)
-            self._set_status("✓  Obfuscated payload copied to clipboard.", C_SUCCESS)
-        except Exception as exc:
-            self._set_status(f"✕  Clipboard write failed: {exc}", C_ERROR)
+        QApplication.clipboard().setText(result)
+        self._set_status("✓  Obfuscated payload copied to clipboard.", C_SUCCESS)
 
     def _do_decode(self) -> None:
-        """Scan raw input for embedded Plane 14 payload and surface result."""
-        raw = self._raw_input.get("1.0", "end-1c")
+        raw = self._raw_input.toPlainText()
         if not raw.strip():
             self._set_status("⚠  Paste or type raw text to scan.", C_WARNING)
             return
@@ -477,46 +526,34 @@ class BlindTagWidget(ctk.CTk):
         try:
             message = decode(raw)
         except InvalidPayloadError as exc:
-            self._write_textbox(self._decode_output, f"[Corrupted payload: {exc}]")
-            self._decode_output.configure(text_color=C_ERROR)
+            self._decode_output.setPlainText(f"[Corrupted payload: {exc}]")
+            self._decode_output.setStyleSheet(_textbox_style(C_ERROR, C_SURFACE))
             self._set_status(f"✕  Decode error: {exc}", C_ERROR)
             return
 
         if message:
-            self._write_textbox(self._decode_output, message)
-            self._decode_output.configure(text_color=C_SUCCESS)
-            self._set_status(
-                f"✓  Payload extracted — {len(message)} chars.", C_SUCCESS
-            )
+            self._decode_output.setPlainText(message)
+            self._decode_output.setStyleSheet(_textbox_style(C_SUCCESS, C_SURFACE))
+            self._set_status(f"✓  Payload extracted — {len(message)} chars.", C_SUCCESS)
         else:
-            self._write_textbox(
-                self._decode_output, "[No Plane 14 payload detected in this text]"
-            )
-            self._decode_output.configure(text_color=C_MUTED)
+            self._decode_output.setPlainText("[No Plane 14 payload detected in this text]")
+            self._decode_output.setStyleSheet(_textbox_style(C_MUTED, C_SURFACE))
             self._set_status("·  No hidden payload found.", C_MUTED)
 
     def _paste_and_decode(self) -> None:
-        """Pull clipboard content and run decoder immediately."""
-        try:
-            text = pyperclip.paste()
-        except Exception as exc:
-            self._set_status(f"✕  Clipboard read failed: {exc}", C_ERROR)
-            return
-
-        self._raw_input.configure(state="normal")
-        self._raw_input.delete("1.0", "end")
-        self._raw_input.insert("1.0", text)
+        text = QApplication.clipboard().text()
+        self._raw_input.setPlainText(text)
         self._do_decode()
 
     def _clear_encode(self) -> None:
-        for widget in (self._anchor_input, self._hidden_input):
-            widget.delete("1.0", "end")
-        self._write_textbox(self._encode_output, "")
+        self._anchor_input.clear()
+        self._hidden_input.clear()
+        self._encode_output.clear()
         self._set_status("Cleared.", C_MUTED)
 
     def _clear_decode(self) -> None:
-        self._raw_input.delete("1.0", "end")
-        self._write_textbox(self._decode_output, "")
+        self._raw_input.clear()
+        self._decode_output.clear()
         self._set_status("Cleared.", C_MUTED)
 
     # =========================================================================
@@ -524,175 +561,129 @@ class BlindTagWidget(ctk.CTk):
     # =========================================================================
 
     def _toggle_watcher(self) -> None:
-        if self._watcher_var.get():
+        if self._watcher_chk.isChecked():
             self._start_watcher()
         else:
             self._stop_watcher()
 
     def _start_watcher(self) -> None:
-        """Spin up the background clipboard polling thread."""
-        self._clipboard_active = True
-        self._last_clipboard = ""
-        self._watcher_thread = threading.Thread(
-            target=self._watcher_loop,
-            daemon=True,         # Thread exits when the main process exits
-            name="BlindTag-ClipboardWatcher",
+        """Connect to Qt clipboard dataChanged signal — no polling thread needed."""
+        QApplication.clipboard().dataChanged.connect(self._on_clipboard_change)
+        self._watcher_active = True
+        self._indicator.setStyleSheet(
+            f"color: {C_ACCENT}; font-size: 10pt; background: transparent;"
         )
-        self._watcher_thread.start()
-        self._indicator.configure(text_color=C_ACCENT)
         self._set_status(
-            "◉  Clipboard Watcher active — scanning for hidden payloads…",
-            C_ACCENT,
+            "◉  Clipboard Watcher active — scanning for hidden payloads…", C_ACCENT
         )
 
     def _stop_watcher(self) -> None:
-        """Signal the watcher thread to stop and update the UI."""
-        self._clipboard_active = False
-        self._indicator.configure(text_color=C_SURFACE)
+        try:
+            QApplication.clipboard().dataChanged.disconnect(self._on_clipboard_change)
+        except RuntimeError:
+            pass  # Already disconnected
+        self._watcher_active = False
+        self._indicator.setStyleSheet(
+            f"color: {C_SURFACE}; font-size: 10pt; background: transparent;"
+        )
         self._set_status("Clipboard Watcher stopped.", C_MUTED)
 
-    def _watcher_loop(self) -> None:
-        """
-        Daemon thread body: poll clipboard every CLIPBOARD_POLL_MS milliseconds.
-
-        On detecting new clipboard content, attempts to decode a Plane 14
-        payload. Positive results are dispatched back to the main thread via
-        ``widget.after()`` to keep all Tkinter calls on the UI thread.
-        """
-        while self._clipboard_active:
-            try:
-                current = pyperclip.paste()
-            except Exception:
-                current = ""
-
-            if current and current != self._last_clipboard:
-                self._last_clipboard = current
-                try:
-                    message = decode(current)
-                    if message:
-                        # Schedule UI update on the main thread
-                        self.after(0, lambda m=message, t=current: self._notify_payload(m, t))
-                except (InvalidPayloadError, Exception):
-                    pass  # Malformed input — silently skip
-
-            time.sleep(CLIPBOARD_POLL_MS / 1000.0)
+    def _on_clipboard_change(self) -> None:
+        """Fires on the main thread when clipboard content changes."""
+        if not self._watcher_active:
+            return
+        text = QApplication.clipboard().text()
+        if not text:
+            return
+        try:
+            message = decode(text)
+            if message:
+                self._notify_payload(message, text)
+        except (InvalidPayloadError, Exception):
+            pass
 
     def _notify_payload(self, message: str, raw: str) -> None:
-        """
-        Surface a notification overlay and auto-populate the Decode panel.
+        """Surface notification overlay and populate Decode panel."""
+        self._dismiss_notify()
 
-        Called on the main UI thread (dispatched via self.after()).
-        Notification frame auto-dismisses after NOTIFY_DURATION_MS.
-        """
-        # Dismiss any existing notification
-        if self._notify_frame is not None:
-            try:
-                self._notify_frame.destroy()
-            except Exception:
-                pass
-            self._notify_frame = None
-
-        # Switch to decode panel and populate
-        self._toggle.set("  Decode  ")
         self._show_decode()
-        self._raw_input.configure(state="normal")
-        self._raw_input.delete("1.0", "end")
-        self._raw_input.insert("1.0", raw)
-        self._write_textbox(self._decode_output, message)
-        self._decode_output.configure(text_color=C_SUCCESS)
+        self._raw_input.setPlainText(raw)
+        self._decode_output.setPlainText(message)
+        self._decode_output.setStyleSheet(_textbox_style(C_SUCCESS, C_SURFACE))
 
         preview = message[:48] + ("…" if len(message) > 48 else "")
         self._set_status(f"⬡  PAYLOAD DETECTED  →  \"{preview}\"", C_ACCENT)
 
-        # Build floating notification banner
-        notif = ctk.CTkFrame(
-            self, fg_color=C_ACCENT,
-            corner_radius=8, border_width=0,
+        # Floating notification banner (child widget — no external window)
+        notif = QLabel(f"⬡  PAYLOAD DETECTED  ·  {preview}", self)
+        notif.setAlignment(Qt.AlignCenter)
+        notif.setStyleSheet(
+            f"background-color: {C_ACCENT}; color: white; "
+            f"font-weight: bold; font-size: 10pt; "
+            f"border-radius: 8px; padding: 9px 14px;"
         )
-        notif.place(relx=0.5, rely=0.88, anchor="center", relwidth=0.88)
+        notif.adjustSize()
+        w = int(self.width() * 0.88)
+        notif.setFixedWidth(w)
+        notif.move((self.width() - w) // 2, int(self.height() * 0.85))
+        notif.show()
+        self._notify_widget = notif
 
-        ctk.CTkLabel(
-            notif,
-            text=f"⬡  PAYLOAD DETECTED  ·  {preview}",
-            font=(FONT_UI[0], FONT_UI[1], "bold"),
-            text_color="#FFFFFF",
-        ).pack(padx=14, pady=9)
-
-        self._notify_frame = notif
-
-        # Auto-dismiss
-        self.after(NOTIFY_DURATION_MS, self._dismiss_notify)
+        self._notify_timer.start(NOTIFY_DURATION_MS)
 
         # Bring window to front
-        self.lift()
-        self.focus_force()
-        self.attributes("-alpha", 1.0)
-        self.after(1500, lambda: self.attributes("-alpha", 0.96))
+        self.raise_()
+        self.activateWindow()
+        self.setWindowOpacity(1.0)
+        QTimer.singleShot(1500, lambda: self.setWindowOpacity(0.96))
 
     def _dismiss_notify(self) -> None:
-        if self._notify_frame is not None:
-            try:
-                self._notify_frame.destroy()
-            except Exception:
-                pass
-            self._notify_frame = None
+        if self._notify_widget is not None:
+            self._notify_widget.hide()
+            self._notify_widget.deleteLater()
+            self._notify_widget = None
 
     # =========================================================================
     # Status bar
     # =========================================================================
 
     def _set_status(self, message: str, color: str = C_MUTED) -> None:
-        self._status_label.configure(text=message, text_color=color)
+        self._status_label.setText(message)
+        self._status_label.setStyleSheet(
+            f"color: {color}; font-size: 9pt; background: transparent;"
+        )
 
     # =========================================================================
     # Hotkeys
     # =========================================================================
 
     def _bind_hotkeys(self) -> None:
-        """Register global keyboard shortcuts."""
-        self.bind(
-            "<Control-e>",
-            lambda _: (self._toggle.set("  Encode  "), self._show_encode()),
+        QShortcut(QKeySequence("Ctrl+E"), self).activated.connect(self._show_encode)
+        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(self._show_decode)
+        QShortcut(QKeySequence("Ctrl+W"), self).activated.connect(
+            self._toggle_watcher_hotkey
         )
-        self.bind(
-            "<Control-d>",
-            lambda _: (self._toggle.set("  Decode  "), self._show_decode()),
+        QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(
+            self._primary_action
         )
-        self.bind("<Control-w>", lambda _: self._toggle_watcher_hotkey())
-        self.bind(
-            "<Control-Return>",
-            lambda _: (
-                self._encode_and_copy()
-                if self._current_panel == "encode"
-                else self._paste_and_decode()
-            ),
-        )
-        self.bind("<Escape>", lambda _: self._on_close())
+        QShortcut(QKeySequence("Escape"), self).activated.connect(self.close)
 
     def _toggle_watcher_hotkey(self) -> None:
-        new_state = not self._watcher_var.get()
-        self._watcher_var.set(new_state)
-        self._toggle_watcher()
+        self._watcher_chk.setChecked(not self._watcher_chk.isChecked())
+
+    def _primary_action(self) -> None:
+        if self._current_panel == "encode":
+            self._encode_and_copy()
+        else:
+            self._paste_and_decode()
 
     # =========================================================================
     # Window management
     # =========================================================================
 
-    def _drag_start(self, event: "tk.Event") -> None:  # type: ignore[name-defined]
-        self._drag_start_x = event.x
-        self._drag_start_y = event.y
-
-    def _drag_motion(self, event: "tk.Event") -> None:  # type: ignore[name-defined]
-        new_x = self.winfo_x() + event.x - self._drag_start_x
-        new_y = self.winfo_y() + event.y - self._drag_start_y
-        self.geometry(f"+{new_x}+{new_y}")
-
-    def _minimize(self) -> None:
-        self.iconify()
-
-    def _on_close(self) -> None:
+    def closeEvent(self, event) -> None:
         self._stop_watcher()
-        self.destroy()
+        super().closeEvent(event)
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
@@ -704,8 +695,11 @@ def run_widget() -> None:
     Call this function directly or via the ``blindtag-widget`` console script
     installed by pyproject.toml.
     """
-    widget = BlindTagWidget()
-    widget.mainloop()
+    app = QApplication.instance() or QApplication(sys.argv)
+    app.setStyleSheet(_APP_STYLESHEET)
+    win = BlindTagWindow()
+    win.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
