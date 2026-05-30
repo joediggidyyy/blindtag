@@ -1,6 +1,6 @@
 # BlindTag Widget Schema
 
-**Status**: Proposed — locked for implementation (Pass D)
+**Status**: Revised — Pass G corrections applied (guidance readability + emoji insertion field)
 **Precondition**: Pass C complete (`e134dab`); all 25 CLI tests passing; calamum go/pass
 **Execution authority**: This document is the design contract. An implementation checklist will be created before Pass D begins.
 **Scope**: Three surfaces — in-product guidance panel, emoji alias selector flyout, and emoji library editor
@@ -66,17 +66,17 @@ The button uses `_btn_ghost_style()` with a fixed size of `26×26`. It toggles t
 
 Each card is a `QWidget` with:
 - Header row: `▶ / ▼` caret label + bold topic label, full-width clickable
-- Expanded body: a `QLabel` with `wordWrap=True`, `C_MUTED` color, `9pt` font
+- Expanded body: a `QLabel` with `wordWrap=True`, `C_TEXT` color (not `C_MUTED` — body guidance prose must be readable, not dimmed), `10pt` font, `4px` left-indent from the caret column
 
-Cards with shallow content (one or two words of explanation) do **not** have a caret — they display inline as static label rows. Cards with meaningful guidance (3+ sentences or actionable steps) use the expand caret.
+> **Readability rule**: `C_MUTED` is reserved for section labels and hints. Guidance card body text uses `C_TEXT` (`#E0E0E0` or equivalent) at ≥10pt.
 
 ### Card content
 
 | Card | Caret | Expanded guidance |
 |------|-------|-------------------|
 | **Anchor text** | ✓ | The visible text your payload will be hidden inside. Any readable string works. The receiver sees only this text unless they decode it. |
-| **Hidden payload** | ✓ | The secret message to embed. Must be printable characters (letters, numbers, punctuation, spaces). Max ~9,000 characters. Emojis must be inserted as aliases — use the emoji button next to this field. |
-| **Emoji aliases** | ✓ | Emojis cannot be embedded directly (they are not printable ASCII). The emoji selector inserts a short alias like `:smile:` instead. The receiver decodes and sees the alias text. You can edit the library to add your own. |
+| **Hidden payload** | ✓ | The secret message to embed. Must be printable characters (letters, numbers, punctuation, spaces). Max ~9,000 characters. When you pick an emoji from the selector, its alias (e.g. `:smile:`) is automatically appended here alongside the glyph in the anchor text. |
+| **Emoji aliases** | ✓ | Emojis cannot be embedded directly in the hidden payload (they are not printable ASCII). The emoji selector inserts the glyph into your visible anchor text and simultaneously appends the matching alias into the payload — so the receiver decodes the alias and knows which emoji was intended. You can edit the library to add your own. |
 | **Obfuscate & Copy** | ✓ | Runs encode and immediately copies the result to your clipboard. The output looks identical to your anchor text — the payload is invisible. |
 | **Clip Watch** | ✓ | Monitors your clipboard. When you copy text that contains a hidden payload, BlindTag automatically detects and shows it. No data leaves your machine. |
 
@@ -86,13 +86,15 @@ Cards with shallow content (one or two words of explanation) do **not** have a c
 
 ### Trigger placement
 
-In `_build_encode_panel()`, the `HIDDEN PAYLOAD` section label row gains an inline emoji trigger button on the right side of the label row:
+In `_build_encode_panel()`, the `ANCHOR TEXT` section label row gains an inline emoji trigger button on the right side of the label row:
 
 ```
-HIDDEN PAYLOAD  ·  printable ASCII only          ☺
+ANCHOR TEXT  ·  visible cover                    ☺
 ```
 
-The `☺` button (`26×26`, `_btn_ghost_style()`) opens the flyout. It is anchored to the button position so the flyout appears just below the label row, left-aligned with the payload textbox.
+The `☺` button (`26×26`, `_btn_ghost_style()`) opens the flyout. It is anchored to the button position so the flyout appears just below the label row, left-aligned with the anchor textbox.
+
+> **Trigger placement rationale**: The glyph is visible content — it belongs in the anchor text field. Placing the `☺` trigger on the ANCHOR TEXT row correctly signals that clicking picks something to embed in the visible text.
 
 ### Flyout layout
 
@@ -111,7 +113,11 @@ The `☺` button (`26×26`, `_btn_ghost_style()`) opens the flyout. It is anchor
 - Width: `240px`, height auto-expands to fit grid (max `220px`, scrollable)
 - Background: `C_SURFACE` (`#252525`), border `1px solid #303030`
 - Each cell shows **only the emoji glyph** — no alias text in the flyout
-- Clicking a cell appends the entry's active `alias` string to `_hidden_input` and closes the flyout
+- Clicking a cell performs a **dual-field insert**:
+  - Appends the emoji **glyph** to `_anchor_input` (anchor text, visible cover)
+  - Appends the entry's active **alias** string to `_hidden_input` (hidden payload)
+  - Then closes the flyout
+- Dual insert rationale: the glyph is what the reader sees; the alias is what the decoder recovers. A single click wires both sides of the round-trip. The user does not need to make two separate field decisions.
 - The flyout dismisses on click-outside (mouse press event filter on the parent window) or on `Escape`
 - `Edit library` link at the bottom opens the library editor panel
 
@@ -218,7 +224,7 @@ A fourth panel added to `_stack` (after encode, decode). The toggle strip `[Enco
 | Field | Type | Description |
 |-------|------|-------------|
 | `emoji` | string | Unicode emoji glyph; display only |
-| `alias` | string | The active code — this is what gets appended to the payload field on click; must be a member of `codes` |
+| `alias` | string | The active code — this is what gets appended to `_hidden_input` (payload) on flyout click; must be a member of `codes` |
 | `codes` | string[] | Full pick list of available codes for this emoji; each must match `^[ -~]+$` (printable ASCII) |
 | `label` | string | Human-readable name; shown in editor only, never encoded |
 
@@ -265,7 +271,7 @@ No new Python modules. All new UI classes live in `widget.py`.
 |------------|-------|
 | `TestEmojiLibrary` (in `tests/test_widget.py`) | Load `emoji_library_default.json`; verify schema (all entries have `emoji`, `alias`, `codes`, `label`); `alias` is member of `codes`; all codes pass ASCII validation; add/remove entry; add/remove code; set active alias |
 | `TestGuidancePanel` (in `tests/test_widget.py`) | Panel opens/closes, card count matches schema, card text not empty |
-| `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking cell appends active alias to payload field |
+| `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking cell appends glyph to anchor field AND active alias to payload field (dual-field insert) |
 
 These are part of the `tests/test_widget.py` work already in Planned. The emoji/guidance implementation should ship as part of the same pass that delivers `test_widget.py`.
 
