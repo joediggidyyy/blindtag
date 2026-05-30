@@ -1,6 +1,6 @@
 # BlindTag CLI — Locked Implementation Checklist
 
-**Status**: LOCKED — no changes to scope, ordering, or contracts without operator sign-off from joediggidyyy  
+**Status**: COMPLETE — all 7 steps executed and verified; calamum evidence `20260530T202620Z-blindtag-all` (`decision: go`); committed `69cdda4`, pushed to `origin/main`  
 **Pass**: C — Unified CLI Scaffold  
 **Precondition**: Pass A and Pass B are complete and committed (see CHANGELOG.md [1.0.0] + [Unreleased])  
 **Schema authority**: [docs/CLI_SCHEMA.md](CLI_SCHEMA.md)  
