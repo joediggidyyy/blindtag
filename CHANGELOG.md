@@ -41,11 +41,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `X-Request-Id` (UUID4 per request) response headers via `@app.middleware("http")` in `blindtag/api.py`
 - Added `TestSecurityHeaders` class to `tests/test_api.py` (7 tests: content-type-options on health + encode, frame-options on health + encode, request-id UUID4 format, request-id uniqueness per call, headers present on 422 error responses)
 
-**Pass F** — Code quality:
-- Resolve `test_only_tag_cancel_yields_none_or_empty` ambiguity → `assert result is None`
-- Replace `Optional` import with `str | None` union type in `core.py`
-- Add `__all__` export list to `core.py`
-- Add project authors, URLs, and classifiers to `pyproject.toml`
+**Pass F** — COMPLETE (calamum `20260530T230757Z-blindtag-all`, `decision: go`):
+- `test_tag_cancel_as_only_plane14_char_no_crash`: tightened assertion from `is None or == ""` to `is None` (dead branch removed; decode contract is deterministic)
+- Removed `from typing import Optional` from `blindtag/core.py`; return type of `decode()` updated to `str | None`
+- Added `__all__` export list to `blindtag/core.py` (8 public names: constants + codec functions)
 
 ---
 

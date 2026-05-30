@@ -291,8 +291,8 @@ class TestCrashImmunity:
         assert decode(text) == "~"
 
     def test_tag_cancel_as_only_plane14_char_no_crash(self) -> None:
-        """TAG_CANCEL alone must not crash."""
-        assert decode(TAG_CANCEL) is None or decode(TAG_CANCEL) == ""
+        """TAG_CANCEL alone must not crash and must return None (no data chars)."""
+        assert decode(TAG_CANCEL) is None
 
     def test_interspersed_garbage_and_tags_no_crash(self) -> None:
         """Interleaved non-tag Unicode with tag chars must not crash."""

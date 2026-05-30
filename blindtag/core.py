@@ -47,8 +47,19 @@ verifies this property explicitly.
 
 from __future__ import annotations
 
-from typing import Optional
 from .exceptions import InvalidPayloadError
+
+__all__ = [
+    "PLANE14_OFFSET",
+    "TAG_CANCEL",
+    "ASCII_MIN",
+    "ASCII_MAX",
+    "PLANE14_MIN",
+    "PLANE14_MAX",
+    "encode",
+    "decode",
+    "strip_plane14",
+]
 
 # ─── Module-level constants ────────────────────────────────────────────────────
 
@@ -145,7 +156,7 @@ def encode(anchor: str, hidden_message: str) -> str:
     return anchor + tag_buffer + TAG_CANCEL
 
 
-def decode(raw_text: str) -> Optional[str]:
+def decode(raw_text: str) -> str | None:
     """
     Extract the first Plane 14 tag payload embedded in *raw_text*.
 
