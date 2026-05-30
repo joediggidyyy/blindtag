@@ -1,6 +1,6 @@
 # BlindTag Widget Schema
 
-**Status**: Revised — Pass G corrections applied (guidance readability + emoji insertion field)
+**Status**: Revised — Pass G corrections applied (guidance readability + emoji insertion field + library editor row simplification + dual-input add form)
 **Precondition**: Pass C complete (`e134dab`); all 25 CLI tests passing; calamum go/pass
 **Execution authority**: This document is the design contract. An implementation checklist will be created before Pass D begins.
 **Scope**: Three surfaces — in-product guidance panel, emoji alias selector flyout, and emoji library editor
@@ -153,36 +153,37 @@ A fourth panel added to `_stack` (after encode, decode). The toggle strip `[Enco
 ├──────────────────────────────────────────┤
 │  ←  Emoji Library                        │
 │  ─────────────────────────────────────   │
-│  😀  ● :smile:  [ :smile: ▾ ]   smile  [✕] │
-│  😂  ● :lol:    [ :lol:   ▾ ]  laughing [✕] │
-│  ❤️  ● :heart:  [ :heart: ▾ ]   heart   [✕] │
+│  😀   smile       [✕]                   │
+│  😂   laughing    [✕]                   │
+│  ❤️   heart       [✕]                   │
 │  ...                                     │
 │  ─────────────────────────────────────   │
 │  + Add entry                             │
-│    Emoji: [  ]  Label: [__________]      │
-│    Codes (comma-separated): [__________] │
-│    Active: [first code]        [Add]     │
+│  😊  label   [________________]  [Add]  │
 └──────────────────────────────────────────┘
 ```
+
+> **Row design rationale**: The code/alias string is internal encoding plumbing — not part of the browse experience. Rows show only what the user cares about: the glyph and the human label. The active alias is exposed as a tooltip on the glyph for users who need to inspect the encoding value; it is not a separate column.
 
 **Per-row columns:**
 
 | Column | Content |
 |--------|---------|
-| Glyph | Emoji rendered at `18pt`; non-editable |
-| Active indicator | `●` dot in `C_ACCENT` — marks which code is the active alias |
-| Active alias | Text label showing the current active code |
-| Codes picker | Inline compact selector (a `QComboBox`-equivalent using a small `QFrame` popup); lists all codes in the entry; selecting one sets it as the active alias immediately |
+| Glyph | Emoji rendered at `18pt`; non-editable. Tooltip on hover shows the active alias (e.g. `:thumbsdown:`) for users who need to inspect the encoding value. |
 | Label | `C_MUTED` display label |
 | Delete `✕` | Removes the entire entry; no confirmation dialog |
 
-**Add entry form** (bottom):
-- `Emoji` field: single character input
-- `Label` field: plain text
-- `Codes` field: comma-separated list, e.g. `:smile:, :grinning:, SMILE` — first entry becomes the initial active alias
-- All fields inline; `Add` button on the right; validation: each code must match `^[ -~]+$`; red border on invalid code, no modal
+**Add entry form** (bottom, inline — emoji picker icon · label field · Add button):
 
-**Write-through:** All changes (active alias selection, code list edits, add, delete) write immediately to `assets/emoji_library_default.json`. No Save button.
+- **Dual-input emoji field**: accepts either a rendered emoji glyph (paste `👎`) or a code string (type `:thumbsdown:` or `NO`). Detection:
+  - 1–2 chars with codepoint outside printable ASCII → treat as glyph directly; alias auto-set to `:label:` normalized from the label field
+  - Matches `^[ -~]+$` (printable ASCII, code-like) → use as active alias; a resolvable code sets the glyph if found in the existing library, otherwise the user must also paste the glyph
+- `Label` field: plain text; required
+- `Add` button: disabled until both emoji (or resolvable code) and label are non-empty
+- Validation: code string must match `^[ -~]+$`; red border on invalid input, no modal
+- On add: new entry appended with `alias = resolved_code`, `codes = [resolved_code]`, `emoji = resolved_glyph`
+
+**Write-through:** All changes (add, delete) write immediately to `assets/emoji_library_default.json`. No Save button.
 
 ---
 
