@@ -20,7 +20,7 @@ blindtag/
 │   ├── __init__.py        Public API surface
 │   ├── core.py            Codec engine — encode / decode / strip_plane14
 │   ├── api.py             FastAPI local transport layer
-│   ├── widget.py          Desktop observer widget (customtkinter)
+│   ├── widget.py          Desktop observer widget (PySide6)
 │   └── exceptions.py      Domain exception hierarchy
 ├── tests/
 │   ├── test_core.py       Core engine unit tests (pytest)
@@ -83,13 +83,7 @@ pip install -e ".[dev]"               # + pytest, httpx, coverage
 
 ### Linux clipboard support
 
-`pyperclip` needs `xclip` or `xsel` on Linux:
-
-```bash
-sudo apt install xclip      # Debian / Ubuntu
-sudo dnf install xclip      # Fedora / RHEL
-sudo pacman -S xclip        # Arch
-```
+PySide6 uses Qt's native clipboard API. No `xclip` or `xsel` is required on Linux. A running display server (X11 or Wayland via XWayland) is required.
 
 ---
 
@@ -330,7 +324,7 @@ pytest --cov=blindtag --cov-report=term-missing
 - **Localhost only.** The API server binds to `127.0.0.1` by default. Never expose it on `0.0.0.0` in untrusted network environments.
 - **Input sanitization.** The Pydantic validation layer rejects oversized and malformed payloads at the HTTP boundary before any codec code executes.
 - **No persistence.** The widget and API hold no state between requests. All data lives in process memory only.
-- **Platform clipboard.** The clipboard watcher reads only from the local system clipboard using `pyperclip`. It does not transmit data over any network.
+- **Platform clipboard.** The clipboard watcher reads only from the local system clipboard (via Qt's native clipboard API). It does not transmit data over any network.
 
 ---
 

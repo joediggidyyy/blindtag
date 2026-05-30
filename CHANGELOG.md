@@ -18,6 +18,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add `tests/test_widget.py` (import smoke + plumbing)
 - Add `X-Request-Id` response header to API
 - Add security headers to API responses
+- **Unified CLI** — add `blindtag` root entry point with `encode`, `decode`, `strip`, `api`, and `widget` subcommands; demote `blindtag-api` / `blindtag-widget` to compat shims; add `blindtag/__main__.py` for `python -m blindtag`; add stdin piping and `--out json` flag (see [docs/CLI_SCHEMA.md](docs/CLI_SCHEMA.md), [docs/CLI_IMPLEMENTATION_CHECKLIST.md](docs/CLI_IMPLEMENTATION_CHECKLIST.md))
+- Fix stale `run_widget.py` docstring (still references `customtkinter` / `pyperclip` / Linux xclip after PySide6 rewrite)
+- Fix stale `blindtag/__init__.py` module docstring (widget described as "(customtkinter)")
 
 ---
 
