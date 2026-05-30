@@ -13,6 +13,14 @@ authors = [
     { name = "Polymath", email = "dev@polymath-global.com" },
 ]
 keywords = ["steganography", "unicode", "watermarking", "plane14", "encoding"]
+dependencies = [
+    # API server
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    # Widget
+    "PySide6>=6.8,<7",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -31,15 +39,6 @@ Homepage = "https://polymath-global.com"
 Source = "https://github.com/joediggidyyy/blindtag"
 Issues = "https://github.com/joediggidyyy/blindtag/issues"
 Changelog = "https://github.com/joediggidyyy/blindtag/blob/main/CHANGELOG.md"
-
-dependencies = [
-    # API server
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.30.0",
-    "pydantic>=2.7.0",
-    # Widget
-    "PySide6>=6.8,<7",
-]
 
 [project.optional-dependencies]
 dev = [
