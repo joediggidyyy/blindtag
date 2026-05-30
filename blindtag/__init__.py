@@ -15,7 +15,7 @@ Modules
 -------
 blindtag.core       — Codec engine (encode / decode / strip_plane14)
 blindtag.api        — FastAPI local transport layer
-blindtag.widget     — Desktop observer widget (customtkinter)
+blindtag.widget     — Desktop observer widget (PySide6)
 blindtag.exceptions — Domain exception hierarchy
 """
 

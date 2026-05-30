@@ -49,8 +49,9 @@ dev = [
 ]
 
 [project.scripts]
-blindtag-api    = "blindtag.api:run_server"
-blindtag-widget = "blindtag.widget:run_widget"
+blindtag        = "blindtag.cli:main"
+blindtag-api    = "blindtag.cli:_api_shim"
+blindtag-widget = "blindtag.cli:_widget_shim"
 
 [tool.setuptools.packages.find]
 where = ["."]

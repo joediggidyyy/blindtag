@@ -10,17 +10,13 @@ Usage
 
 Requirements
 ------------
-  pip install customtkinter pyperclip
+  PySide6 >= 6.8  (installed with: pip install -e .)
 
 Platform notes
 --------------
-  Windows  — Works natively. DPI-awareness is handled by customtkinter.
-  macOS    — Works natively. Grant Accessibility permissions if clipboard
-             watcher encounters permission errors.
+  Windows  — Works natively. DPI handling managed by Qt.
+  macOS    — Works natively. Grant Accessibility permissions if prompted.
   Linux    — Requires a running display server (X11 or Wayland via XWayland).
-             Install xclip or xsel for pyperclip clipboard support:
-               sudo apt install xclip     # Debian / Ubuntu
-               sudo dnf install xclip     # Fedora
 """
 
 import sys
@@ -45,10 +41,10 @@ def main() -> None:
         from blindtag.widget import run_widget
         run_widget()
     except ImportError as exc:
-        print(f"\n  ✕  Import error: {exc}")
+        print(f"\n  Import error: {exc}")
         print(
             "  Ensure GUI dependencies are installed:\n"
-            "    pip install customtkinter pyperclip\n"
+            "    pip install -e .\n"
         )
         sys.exit(1)
     except Exception as exc:

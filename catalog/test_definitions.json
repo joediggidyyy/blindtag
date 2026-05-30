@@ -64,6 +64,37 @@
       }
     },
     {
+      "id": "blindtag-cli",
+      "title": "BlindTag Unified CLI",
+      "summary": "Tests for the blindtag root CLI entry point: encode, decode, strip subcommands (text + JSON output, stdin piping, exit codes), api shim delegation, widget shim delegation, --version flag.",
+      "status": "active",
+      "category": "integration",
+      "selector_policy": "exact-name-only",
+      "profiles": ["default", "release"],
+      "tags": ["cli", "smoke"],
+      "policy_flags": ["deterministic-output", "local-only", "release-gate"],
+      "evidence_requirements": ["stdout_capture", "stderr_capture", "report_json"],
+      "default_lanes": ["pytest"],
+      "metadata": {
+        "module": "blindtag.cli",
+        "test_file": "tests/test_cli.py"
+      },
+      "lanes": {
+        "pytest": [
+          {
+            "id": "cli-pytest",
+            "title": "pytest tests/test_cli.py",
+            "command": ["{python}", "-m", "pytest", "tests/test_cli.py", "-v", "--tb=short"],
+            "expected_artifacts": ["stdout", "stderr"],
+            "evidence_requirements": ["stdout_capture", "stderr_capture"],
+            "notes": "CLI subcommand contracts, exit codes, JSON output, stdin piping, compat shims."
+          }
+        ],
+        "sandbox_test": [],
+        "empirical_test": []
+      }
+    },
+    {
       "id": "blindtag-all",
       "title": "BlindTag Full Suite",
       "summary": "Rollup lane running the complete test suite (core + API). This is the pre-push baseline gate.",
