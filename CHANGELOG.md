@@ -28,9 +28,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Planned (see [docs/REVIEW_AND_MATURITY_PLAN.md](docs/REVIEW_AND_MATURITY_PLAN.md) and [docs/WIDGET_SCHEMA.md](docs/WIDGET_SCHEMA.md))
 - **Widget guidance panel** — left-side slide-out `?` panel with collapsed problem-definition cards (Anchor text, Hidden payload, Emoji aliases, Obfuscate & Copy, Clip Watch); see [docs/WIDGET_SCHEMA.md](docs/WIDGET_SCHEMA.md)
-- **Emoji alias selector** — inline `☺` trigger on the Hidden Payload row; floating `QFrame` flyout (not modal) showing emoji + alias pairs; clicking appends alias to payload field; aliases are printable ASCII so they encode cleanly through the Plane 14 codec
-- **Emoji library editor** — fourth panel in `_stack`, accessible from flyout `Edit library` link; add/delete entries; writes through to `assets/emoji_library.json`; alias validated as printable ASCII on entry
-- `assets/emoji_library_default.json` — 20-entry curated default library shipped with the package; seeded into user-local `assets/emoji_library.json` on first run
+- **Emoji alias selector** — inline `☺` trigger on the Hidden Payload row; floating `QFrame` flyout showing emoji glyphs only (clean grid, no text noise); clicking appends the entry's active alias (printable ASCII) to the payload field
+- **Emoji library editor** — fourth panel in `_stack`, accessible from flyout `Edit library` link; per-entry: glyph display, active alias indicator, `codes` pick list (select active code inline), label, delete; add-entry form accepts emoji + label + comma-separated codes list; all writes go directly to `assets/emoji_library_default.json`
+- `assets/emoji_library_default.json` — 20-entry curated default library, tracked and versioned in the repo, shipped with the package pre-populated including per-emoji `codes` arrays; single working library (no separate user-local copy)
 - Resolve `test_only_tag_cancel_yields_none_or_empty` test ambiguity
 - Add `tests/test_widget.py` (import smoke + plumbing + emoji library + guidance panel)
 - Add `X-Request-Id` response header to API

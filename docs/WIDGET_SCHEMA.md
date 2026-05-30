@@ -3,7 +3,7 @@
 **Status**: Proposed — locked for implementation (Pass D)
 **Precondition**: Pass C complete (`e134dab`); all 25 CLI tests passing; calamum go/pass
 **Execution authority**: This document is the design contract. An implementation checklist will be created before Pass D begins.
-**Scope**: Two surfaces — in-product guidance panel and emoji alias selector (with library editor)
+**Scope**: Three surfaces — in-product guidance panel, emoji alias selector flyout, and emoji library editor
 
 ---
 
@@ -15,8 +15,8 @@ These extend the core Polymath visual precedents already established in `widget.
 2. **Left-side slide-out for guidance** — the `?` help trigger opens a slide-out from the left edge, keeping the right-side encode/decode panel fully visible.
 3. **Collapsed cards, in-card caret** — help cards are collapsed by default; only entries with meaningful deeper content expose an expand caret. Expanding happens vertically in place.
 4. **No control-bar intrusions** — the emoji selector is a floating `QFrame` flyout anchored to a small inline trigger; it is not a dialog, modal, dropdown bar, or boxed control cluster.
-5. **Alias transparency** — the payload constraint (printable ASCII only) means emojis must be represented as ASCII alias strings. The UI makes this visible to the user without jargon: the flyout shows the emoji and the alias it will insert.
-6. **Library persistence is local** — `assets/emoji_library.json` is a user-local file, `.gitignore`d from default commits, seeded from a shipped default if absent.
+5. **Alias transparency** — the payload constraint (printable ASCII only) means emojis must be represented as ASCII alias strings. The selection flyout shows only the emoji glyph (fast scan, no text noise). The edit panel reveals the active alias and the full `codes` pick list, keeping complexity out of the selection flow.
+6. **Library ships with the application** — `assets/emoji_library_default.json` is a tracked, versioned file committed to the repo. It is the working library at runtime; there is no separate user-local copy or seed step. Users edit it via the in-app editor; those edits persist to the same file.
 
 ---
 
@@ -97,32 +97,33 @@ The `☺` button (`26×26`, `_btn_ghost_style()`) opens the flyout. It is anchor
 ### Flyout layout
 
 ```
-┌─────────────────────────────────────────┐
-│  😀  :smile:    😂  :lol:    ❤️  :heart:  │
-│  👍  :thumbsup: 👎  :thumbsdown: 🔥 :fire:│
-│  ...                                    │
-│  ─────────────────────────────────────  │
-│  Edit library                       ⚙  │
-└─────────────────────────────────────────┘
+┌────────────────────────────────┐
+│  😀   😂   ❤️   👍   👎   🔥  │
+│  ⭐   ✅   ❌   ⚠️   🔒   🔓  │
+│  📎   📋   🗑️   💬   📌   🏷️  │
+│  🔑   👁️                       │
+│  ──────────────────────────    │
+│  Edit library              ⚙  │
+└────────────────────────────────┘
 ```
 
 - The flyout is a `QFrame` with `StyledPanel` shape, not a separate window
-- Width: `300px`, height auto-expands to fit library contents (max `220px`, scrollable)
+- Width: `240px`, height auto-expands to fit grid (max `220px`, scrollable)
 - Background: `C_SURFACE` (`#252525`), border `1px solid #303030`
-- Each entry shows the emoji glyph + alias string side by side
-- Clicking an entry **appends** the alias string to `_hidden_input` and closes the flyout
+- Each cell shows **only the emoji glyph** — no alias text in the flyout
+- Clicking a cell appends the entry's active `alias` string to `_hidden_input` and closes the flyout
 - The flyout dismisses on click-outside (mouse press event filter on the parent window) or on `Escape`
 - `Edit library` link at the bottom opens the library editor panel
 
 ### Grid layout
 
-Entries are laid out in a `QGridLayout`, 3 columns. Each cell is a `QPushButton` with transparent background:
+Entries are laid out in a `QGridLayout`, 6 columns. Each cell is a `QPushButton`:
 
 ```
-[emoji  alias ]  [emoji  alias ]  [emoji  alias ]
+[ 😀 ]  [ 😂 ]  [ ❤️ ]  [ 👍 ]  [ 👎 ]  [ 🔥 ]
 ```
 
-Button style: `_btn_ghost_style()` with `font-size: 10pt`, `text-align: left`, `padding: 4px 8px`.
+Button style: `_btn_ghost_style()` with `font-size: 18pt`, `padding: 6px`, fixed `44×44` size. System font renders the glyph; no emoji library dependency required.
 
 ---
 
@@ -146,61 +147,88 @@ A fourth panel added to `_stack` (after encode, decode). The toggle strip `[Enco
 ├──────────────────────────────────────────┤
 │  ←  Emoji Library                        │
 │  ─────────────────────────────────────   │
-│  😀  :smile:        thumbs up    [✕]     │
-│  😂  :lol:          laughing     [✕]     │
-│  ❤️  :heart:        heart        [✕]     │
+│  😀  ● :smile:  [ :smile: ▾ ]   smile  [✕] │
+│  😂  ● :lol:    [ :lol:   ▾ ]  laughing [✕] │
+│  ❤️  ● :heart:  [ :heart: ▾ ]   heart   [✕] │
 │  ...                                     │
 │  ─────────────────────────────────────   │
 │  + Add entry                             │
-│    Emoji: [____]  Alias: [_________]     │
-│    Label: [________________]   [Add]     │
+│    Emoji: [  ]  Label: [__________]      │
+│    Codes (comma-separated): [__________] │
+│    Active: [first code]        [Add]     │
 └──────────────────────────────────────────┘
 ```
 
-- `← Back` ghost button navigates to the previously active encode/decode panel
-- Each row: emoji display (non-editable label), alias string, label text, delete `✕` button
-- Delete requires no confirmation dialog — it takes immediate effect and updates the JSON file
-- **Add entry form** at the bottom: three fields + `Add` button. Inline validation: alias must be non-empty printable ASCII only; shows red border if invalid. No modal.
-- All changes write through to `assets/emoji_library.json` immediately on each action (not on a Save button)
+**Per-row columns:**
+
+| Column | Content |
+|--------|---------|
+| Glyph | Emoji rendered at `18pt`; non-editable |
+| Active indicator | `●` dot in `C_ACCENT` — marks which code is the active alias |
+| Active alias | Text label showing the current active code |
+| Codes picker | Inline compact selector (a `QComboBox`-equivalent using a small `QFrame` popup); lists all codes in the entry; selecting one sets it as the active alias immediately |
+| Label | `C_MUTED` display label |
+| Delete `✕` | Removes the entire entry; no confirmation dialog |
+
+**Add entry form** (bottom):
+- `Emoji` field: single character input
+- `Label` field: plain text
+- `Codes` field: comma-separated list, e.g. `:smile:, :grinning:, SMILE` — first entry becomes the initial active alias
+- All fields inline; `Add` button on the right; validation: each code must match `^[ -~]+$`; red border on invalid code, no modal
+
+**Write-through:** All changes (active alias selection, code list edits, add, delete) write immediately to `assets/emoji_library_default.json`. No Save button.
 
 ---
 
-## Persistence — `assets/emoji_library.json`
+## Persistence — `assets/emoji_library_default.json`
+
+### Authority
+
+`assets/emoji_library_default.json` is a **tracked, versioned file committed to the repository**. It is the single working library — there is no separate user-local copy or seed step. The in-app editor writes directly to this file. It ships pre-populated with the default 20-entry library including per-emoji `codes` arrays.
 
 ### Format
 
 ```json
 [
-  { "emoji": "😀", "alias": ":smile:",      "label": "smile"       },
-  { "emoji": "😂", "alias": ":lol:",        "label": "laughing"    },
-  { "emoji": "❤️", "alias": ":heart:",      "label": "heart"       },
-  { "emoji": "👍", "alias": ":thumbsup:",   "label": "thumbs up"   },
-  { "emoji": "👎", "alias": ":thumbsdown:", "label": "thumbs down" },
-  { "emoji": "🔥", "alias": ":fire:",       "label": "fire"        },
-  { "emoji": "⭐", "alias": ":star:",       "label": "star"        },
-  { "emoji": "✅", "alias": ":check:",      "label": "check"       },
-  { "emoji": "❌", "alias": ":x:",          "label": "x"           },
-  { "emoji": "⚠️", "alias": ":warn:",       "label": "warning"     },
-  { "emoji": "🔒", "alias": ":lock:",       "label": "lock"        },
-  { "emoji": "🔓", "alias": ":unlock:",     "label": "unlock"      },
-  { "emoji": "📎", "alias": ":clip:",       "label": "clip"        },
-  { "emoji": "📋", "alias": ":paste:",      "label": "paste"       },
-  { "emoji": "🗑️", "alias": ":trash:",      "label": "trash"       },
-  { "emoji": "💬", "alias": ":msg:",        "label": "message"     },
-  { "emoji": "📌", "alias": ":pin:",        "label": "pin"         },
-  { "emoji": "🏷️", "alias": ":tag:",        "label": "tag"         },
-  { "emoji": "🔑", "alias": ":key:",        "label": "key"         },
-  { "emoji": "👁️", "alias": ":eye:",        "label": "eye"         }
+  { "emoji": "😀", "alias": ":smile:",      "codes": [":smile:", ":smiley:", ":grinning:", "SMILE"],  "label": "smile"       },
+  { "emoji": "😂", "alias": ":lol:",        "codes": [":lol:", ":joy:", "LOL"],                       "label": "laughing"    },
+  { "emoji": "❤️", "alias": ":heart:",      "codes": [":heart:", ":love:", "HEART"],                  "label": "heart"       },
+  { "emoji": "👍", "alias": ":thumbsup:",   "codes": [":thumbsup:", ":+1:", "OK"],                   "label": "thumbs up"   },
+  { "emoji": "👎", "alias": ":thumbsdown:", "codes": [":thumbsdown:", ":-1:", "NO"],                  "label": "thumbs down" },
+  { "emoji": "🔥", "alias": ":fire:",       "codes": [":fire:", "HOT"],                              "label": "fire"        },
+  { "emoji": "⭐", "alias": ":star:",       "codes": [":star:", "STAR"],                             "label": "star"        },
+  { "emoji": "✅", "alias": ":check:",      "codes": [":check:", ":ok:", "YES"],                     "label": "check"       },
+  { "emoji": "❌", "alias": ":x:",          "codes": [":x:", ":no:", "NO"],                          "label": "x"           },
+  { "emoji": "⚠️", "alias": ":warn:",       "codes": [":warn:", ":alert:", "WARN"],                  "label": "warning"     },
+  { "emoji": "🔒", "alias": ":lock:",       "codes": [":lock:", "LOCKED"],                           "label": "lock"        },
+  { "emoji": "🔓", "alias": ":unlock:",     "codes": [":unlock:", "OPEN"],                           "label": "unlock"      },
+  { "emoji": "📎", "alias": ":clip:",       "codes": [":clip:", ":attach:"],                         "label": "clip"        },
+  { "emoji": "📋", "alias": ":paste:",      "codes": [":paste:", ":clipboard:"],                     "label": "paste"       },
+  { "emoji": "🗑️", "alias": ":trash:",      "codes": [":trash:", ":delete:", "DEL"],                 "label": "trash"       },
+  { "emoji": "💬", "alias": ":msg:",        "codes": [":msg:", ":chat:", "MSG"],                     "label": "message"     },
+  { "emoji": "📌", "alias": ":pin:",        "codes": [":pin:", "PIN"],                               "label": "pin"         },
+  { "emoji": "🏷️", "alias": ":tag:",        "codes": [":tag:", "TAG"],                               "label": "tag"         },
+  { "emoji": "🔑", "alias": ":key:",        "codes": [":key:", "KEY"],                               "label": "key"         },
+  { "emoji": "👁️", "alias": ":eye:",        "codes": [":eye:", ":watch:", "EYE"],                    "label": "eye"         }
 ]
 ```
 
+### Schema fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `emoji` | string | Unicode emoji glyph; display only |
+| `alias` | string | The active code — this is what gets appended to the payload field on click; must be a member of `codes` |
+| `codes` | string[] | Full pick list of available codes for this emoji; each must match `^[ -~]+$` (printable ASCII) |
+| `label` | string | Human-readable name; shown in editor only, never encoded |
+
 ### Load behavior
 
-At `BlindTagWindow.__init__`, load `assets/emoji_library.json`. If the file is absent, seed from a shipped read-only default (`assets/emoji_library_default.json`) by copying it into place. If the JSON is malformed, fall back to the default and log a warning to the status bar.
+At `BlindTagWindow.__init__`, load `assets/emoji_library_default.json`. If the JSON is malformed, log a warning to the status bar and continue with an empty library (do not crash).
 
 ### Validation rule
 
-On Add entry: `alias` must match `^[ -~]+$` (printable ASCII 0x20–0x7E). Reject silently with a red border; no modal or dialog.
+On Add entry / Add code: every code must match `^[ -~]+$` (printable ASCII 0x20–0x7E). Reject with red border; no modal or dialog.
 
 ---
 
@@ -224,8 +252,7 @@ The `?` button is inserted after the title label, before `addStretch()`. It is `
 
 | Artifact | Type | Notes |
 |----------|------|-------|
-| `assets/emoji_library_default.json` | Data | Shipped default 20-entry library; read-only reference |
-| `assets/emoji_library.json` | Data | User-local working library; `.gitignore`d |
+| `assets/emoji_library_default.json` | Data | Tracked, versioned. Ships pre-populated with 20 entries including `codes` arrays. Single working library — in-app edits write directly to this file. |
 | `blindtag/widget.py` | Modified | `_GuidancePanel`, `_EmojiCard`, `_EmojiFlyout`, `_LibraryEditorPanel` classes; `?` button in `_TitleBar`; emoji trigger in `_build_encode_panel()` |
 
 No new Python modules. All new UI classes live in `widget.py`.
@@ -236,7 +263,8 @@ No new Python modules. All new UI classes live in `widget.py`.
 
 | Test class | Scope |
 |------------|-------|
-| `TestEmojiLibrary` (in `tests/test_widget.py`) | Load default, add/remove/validate entry, alias ASCII constraint |
+| `TestEmojiLibrary` (in `tests/test_widget.py`) | Load `emoji_library_default.json`; verify schema (all entries have `emoji`, `alias`, `codes`, `label`); `alias` is member of `codes`; all codes pass ASCII validation; add/remove entry; add/remove code; set active alias |
 | `TestGuidancePanel` (in `tests/test_widget.py`) | Panel opens/closes, card count matches schema, card text not empty |
+| `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking cell appends active alias to payload field |
 
 These are part of the `tests/test_widget.py` work already in Planned. The emoji/guidance implementation should ship as part of the same pass that delivers `test_widget.py`.
