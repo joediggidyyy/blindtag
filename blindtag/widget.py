@@ -81,7 +81,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .core import decode, encode
+from .core import decode, encode, strip_plane14
 from .exceptions import InvalidPayloadError
 
 # ─── Asset paths ──────────────────────────────────────────────────────────────
@@ -109,6 +109,69 @@ NOTIFY_DURATION_MS: int = 4_500  # Notification overlay auto-dismiss duration
 # ─── Emoji library ────────────────────────────────────────────────────────────
 
 _CODE_RE = re.compile(r"^[ -~]+$")  # printable ASCII 0x20–0x7E
+
+# ─── Anchor token resolution regexes ─────────────────────────────────────────
+
+_U_TOKEN_RE = re.compile(r"U\+([0-9A-Fa-f]{4,6})")
+_ALIAS_RE = re.compile(r":[a-z0-9_]+:")
+
+
+def _resolve_anchor_tokens(text: str, library: EmojiLibrary) -> str:
+    """
+    Resolve U+XXXX and :alias: tokens in *text* to their Unicode/glyph equivalents.
+
+    Resolution order (left-to-right, non-overlapping):
+      1. ``U+XXXX`` (4–6 hex digits) → ``chr(codepoint)``.  Invalid codepoints
+         (> 0x10FFFF, surrogates 0xD800–0xDFFF) pass through unchanged.
+      2. ``:alias:`` → emoji glyph from *library* ``codes`` membership.
+         Unknown aliases pass through unchanged.
+      3. Everything else passes through unchanged.
+
+    Bare uppercase keywords are intentionally excluded — resolving them
+    would corrupt natural-language anchor text.
+
+    This function performs no I/O; *library* is expected to be an already-
+    instantiated ``EmojiLibrary`` whose entries are loaded inside this call.
+    """
+    if not text:
+        return text
+
+    entries = library.load()
+    # Build alias→glyph map once
+    alias_map: dict[str, str] = {}
+    for entry in entries:
+        for code in entry["codes"]:
+            # codes may already be colon-wrapped (e.g. ":smile:") or bare (e.g. "SMILE")
+            if code.startswith(":") and code.endswith(":") and len(code) > 2:
+                alias_map[code] = entry["emoji"]
+            else:
+                alias_map[f":{code}:"] = entry["emoji"]
+
+    result: list[str] = []
+    i = 0
+    while i < len(text):
+        # Try U+ token
+        m_u = _U_TOKEN_RE.match(text, i)
+        if m_u:
+            hex_str = m_u.group(1)
+            cp = int(hex_str, 16)
+            if cp > 0x10FFFF or 0xD800 <= cp <= 0xDFFF:
+                result.append(m_u.group(0))
+            else:
+                result.append(chr(cp))
+            i = m_u.end()
+            continue
+        # Try :alias: token
+        m_a = _ALIAS_RE.match(text, i)
+        if m_a:
+            token = m_a.group(0)
+            result.append(alias_map.get(token, token))
+            i = m_a.end()
+            continue
+        # Plain character
+        result.append(text[i])
+        i += 1
+    return "".join(result)
 
 
 class EmojiLibrary:
@@ -284,11 +347,10 @@ _CARD_CONTENT: list[tuple[str, str]] = [
     ),
     (
         "Emoji aliases",
-        "Emojis cannot be embedded directly (they are not printable ASCII). "
-        "The emoji selector inserts the glyph into your visible anchor text and "
-        "simultaneously appends the matching alias into the payload — so the "
-        "receiver decodes the alias and knows which emoji was intended. "
-        "You can edit the library to add your own.",
+        "The emoji selector inserts the raw glyph into your anchor text. "
+        "Box 1 is format-agnostic: you can also type a U+XXXX codepoint or "
+        "a :alias: code and it will be resolved automatically at encode time. "
+        "Edit the library to add your own glyphs.",
     ),
     (
         "Obfuscate & Copy",
@@ -427,7 +489,8 @@ class _EmojiFlyout(QFrame):
                 f"QPushButton:hover {{ background-color: #303030; }}"
             )
             alias = entry["alias"]
-            btn.clicked.connect(lambda checked=False, a=alias: self._pick(a))
+            emoji = entry["emoji"]
+            btn.clicked.connect(lambda checked=False, g=emoji: self._pick(g))
             grid.addWidget(btn, idx // COLS, idx % COLS)
 
         scroll.setWidget(grid_widget)
@@ -453,8 +516,8 @@ class _EmojiFlyout(QFrame):
         # Install event filter on parent to dismiss on click-outside
         parent.installEventFilter(self)
 
-    def _pick(self, alias: str) -> None:
-        self._on_select(alias)
+    def _pick(self, emoji: str) -> None:
+        self._on_select(emoji)
         self.hide()
 
     def eventFilter(self, watched, event) -> bool:
@@ -1057,7 +1120,7 @@ class BlindTagWindow(QMainWindow):
         self._emoji_flyout = _EmojiFlyout(
             self,
             self._library,
-            on_select=self._insert_alias,
+            on_select=self._insert_emoji,
             on_edit_library=self._open_library_editor,
         )
         # Position below the emoji trigger button
@@ -1070,17 +1133,11 @@ class BlindTagWindow(QMainWindow):
         self._emoji_flyout.show()
         self._emoji_flyout.raise_()
 
-    def _insert_alias(self, alias: str) -> None:
-        # Dual-field insert: glyph -> anchor, alias -> hidden payload
-        entries = self._library.load()
-        glyph = next((e["emoji"] for e in entries if e["alias"] == alias), None)
-        if glyph:
-            anchor_cur = self._anchor_input.textCursor()
-            anchor_cur.insertText(glyph)
-            self._anchor_input.setTextCursor(anchor_cur)
-        payload_cur = self._hidden_input.textCursor()
-        payload_cur.insertText(alias)
-        self._hidden_input.setTextCursor(payload_cur)
+    def _insert_emoji(self, emoji: str) -> None:
+        """Single-field insert: place raw glyph into anchor input only."""
+        cur = self._anchor_input.textCursor()
+        cur.insertText(emoji)
+        self._anchor_input.setTextCursor(cur)
 
     def _open_library_editor(self) -> None:
         if self._emoji_flyout is not None:
@@ -1092,15 +1149,21 @@ class BlindTagWindow(QMainWindow):
     # =========================================================================
 
     def _do_encode(self) -> None:
-        anchor = self._anchor_input.toPlainText().strip()
+        raw_anchor = self._anchor_input.toPlainText().strip()
         hidden = self._hidden_input.toPlainText().strip()
 
-        if not anchor:
+        if not raw_anchor:
             self._set_status("⚠  Anchor text is required.", C_WARNING)
             return
         if not hidden:
             self._set_status("⚠  Hidden payload is required.", C_WARNING)
             return
+
+        # Strip any pre-existing Plane 14 tag sequences from the anchor
+        # (prevents silent double-encoding when pasting a previously-tagged string).
+        anchor = strip_plane14(raw_anchor)
+        # Resolve U+XXXX and :alias: tokens to their Unicode/glyph equivalents.
+        anchor = _resolve_anchor_tokens(anchor, self._library)
 
         try:
             result = encode(anchor, hidden)

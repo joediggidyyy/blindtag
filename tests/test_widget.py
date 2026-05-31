@@ -1,10 +1,11 @@
 """
 tests/test_widget.py
 ====================
-Tests for Pass D widget surfaces:
-  - TestEmojiLibrary  — headless; no QApplication needed
-  - TestGuidancePanel — requires qapp fixture (session-scoped)
-  - TestEmojiFlyout   — requires qapp fixture (session-scoped)
+Tests for Pass D–H widget surfaces:
+  - TestEmojiLibrary      — headless; no QApplication needed
+  - TestGuidancePanel     — requires qapp fixture (session-scoped)
+  - TestEmojiFlyout       — requires qapp fixture (session-scoped)
+  - TestEncodeResolution  — headless; no QApplication needed
 
 Run with:
     pytest tests/test_widget.py -v
@@ -23,6 +24,7 @@ from blindtag.widget import (
     _EmojiCard,
     _EmojiFlyout,
     _GuidancePanel,
+    _resolve_anchor_tokens,
 )
 
 
@@ -152,16 +154,16 @@ class TestGuidancePanel:
 # =============================================================================
 
 class TestEmojiFlyout:
-    """Flyout cell count and alias-append contract."""
+    """Flyout cell count and glyph-insert contract."""
 
     def _make_flyout(self, qapp):
         from PySide6.QtWidgets import QWidget
         stub = QWidget()
         lib = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
-        self._last_alias: str = ""
+        self._last_received: str = ""
 
-        def on_select(alias):
-            self._last_alias = alias
+        def on_select(emoji: str) -> None:
+            self._last_received = emoji
 
         flyout = _EmojiFlyout(
             stub,  # type: ignore[arg-type]
@@ -176,38 +178,80 @@ class TestEmojiFlyout:
         assert flyout is not None
 
     def test_cell_count_matches_library(self, qapp) -> None:
-        from PySide6.QtWidgets import QPushButton
-        flyout = self._make_flyout(qapp)
-        lib = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
-        expected = len(lib.load())
-        # Emoji buttons have a toolTip set to the alias; Edit library button does not
-        emoji_btns = [
-            b for b in flyout.findChildren(QPushButton)
-            if b.toolTip() != ""
-        ]
-        assert len(emoji_btns) == expected
-
-    def test_click_appends_alias(self, qapp) -> None:
-        from PySide6.QtWidgets import QPushButton
-        from blindtag.widget import BlindTagWindow
         lib = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
         entries = lib.load()
-        first_entry = entries[0]
+        flyout = self._make_flyout(qapp)
+        from PySide6.QtWidgets import QPushButton
+        # Each entry gets one emoji cell button (excluding the edit button)
+        cells = [b for b in flyout.findChildren(QPushButton)
+                 if len(b.text()) > 0 and b.text() != "Edit library  ⚙"]
+        assert len(cells) == len(entries)
 
-        win = BlindTagWindow()
-        win._open_emoji_flyout()
+    def test_click_inserts_glyph(self, qapp) -> None:
+        """Clicking a cell passes the raw glyph to on_select; hidden payload untouched."""
+        lib = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
+        first_entry = lib.load()[0]
+        flyout = self._make_flyout(qapp)
 
-        emoji_btns = [
-            b for b in win._emoji_flyout.findChildren(QPushButton)
-            if b.toolTip() != ""
-        ]
-        emoji_btns[0].click()
+        from PySide6.QtWidgets import QPushButton
+        cells = [b for b in flyout.findChildren(QPushButton)
+                 if len(b.text()) > 0 and b.text() != "Edit library  ⚙"]
+        cells[0].click()
 
-        anchor_text = win._anchor_input.toPlainText()
-        payload_text = win._hidden_input.toPlainText()
-        assert first_entry["emoji"] in anchor_text, (
-            f"expected glyph {first_entry['emoji']!r} in anchor field, got {anchor_text!r}"
-        )
-        assert first_entry["alias"] in payload_text, (
-            f"expected alias {first_entry['alias']!r} in payload field, got {payload_text!r}"
-        )
+        # on_select received the raw glyph (not an alias string)
+        assert self._last_received == first_entry["emoji"]
+
+
+# =============================================================================
+# TestEncodeResolution — headless (no QApplication)
+# =============================================================================
+
+class TestEncodeResolution:
+    """Unit tests for the _resolve_anchor_tokens() resolution pipeline."""
+
+    def _lib(self) -> EmojiLibrary:
+        return EmojiLibrary(_DEFAULT_LIBRARY_PATH)
+
+    def test_u_token_resolves(self) -> None:
+        lib = self._lib()
+        first_entry = lib.load()[0]
+        cp = ord(first_entry["emoji"])
+        token = f"U+{cp:04X}"
+        result = _resolve_anchor_tokens(token, lib)
+        assert result == first_entry["emoji"]
+
+    def test_alias_token_resolves(self) -> None:
+        lib = self._lib()
+        first_entry = lib.load()[0]
+        alias_code = first_entry["codes"][0]
+        token = f":{alias_code}:" if not alias_code.startswith(":") else alias_code
+        # Construct a proper :code: token from the first code value
+        token = ":" + first_entry["codes"][0].strip(":") + ":"
+        result = _resolve_anchor_tokens(token, lib)
+        assert result == first_entry["emoji"]
+
+    def test_plain_text_passes_through(self) -> None:
+        lib = self._lib()
+        text = "Hello, world!"
+        assert _resolve_anchor_tokens(text, lib) == text
+
+    def test_invalid_codepoint_passes_through(self) -> None:
+        lib = self._lib()
+        token = "U+110000"  # > 0x10FFFF
+        assert _resolve_anchor_tokens(token, lib) == token
+
+    def test_unknown_alias_passes_through(self) -> None:
+        lib = self._lib()
+        token = ":notarealemoji:"
+        assert _resolve_anchor_tokens(token, lib) == token
+
+    def test_empty_string(self) -> None:
+        lib = self._lib()
+        assert _resolve_anchor_tokens("", lib) == ""
+
+    def test_surrogate_codepoint_passes_through(self) -> None:
+        lib = self._lib()
+        token = "U+D800"  # surrogate range
+        assert _resolve_anchor_tokens(token, lib) == token
+
+

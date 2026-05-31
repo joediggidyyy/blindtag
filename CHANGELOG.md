@@ -46,7 +46,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Removed `from typing import Optional` from `blindtag/core.py`; return type of `decode()` updated to `str | None`
 - Added `__all__` export list to `blindtag/core.py` (8 public names: constants + codec functions)
 
----
+**Pass G** — COMPLETE (commit `3f41967`, calamum `20260530T234925Z-blindtag-all`, `decision: go`):
+- `BlindTagWindow.__init__`: added `?` title-bar button wired to `_GuidancePanel` toggle; added `☺` inline trigger on anchor row opening `_EmojiFlyout`; `_EmojiFlyout` callback registered as `_insert_alias` (superseded in Pass H)
+- `_GuidancePanel` — left-side slide-out overlay, `_EmojiCard` collapsible cards, 5 entries matching `_CARD_CONTENT`
+- `_EmojiFlyout` — floating glyph-grid with 20 cells, tooltip shows active alias, `Edit library ⚙` footer link
+- `_LibraryEditorPanel` — fourth stack panel; per-entry rows with glyph, active alias, codes pick list, label, delete; add-entry form; writes to `assets/emoji_library_default.json`
+- `tests/test_widget.py`: 15 tests passing (9 `TestEmojiLibrary` + 3 `TestGuidancePanel` + 3 `TestEmojiFlyout`)
+
+**Pass H** — COMPLETE (calamum run pending gate below):
+- `_resolve_anchor_tokens(text, library)` — new module-level pure function; resolves `U+XXXX` tokens to Unicode chars (with invalid codepoint / surrogate pass-through safety) and `:alias:` tokens to glyphs via library lookup; bare uppercase excluded to prevent natural-language collisions; headless-testable with no Qt dependency
+- `_EmojiFlyout._pick`: passes raw emoji glyph to `on_select` callback (was alias string)
+- `BlindTagWindow._insert_alias` renamed to `_insert_emoji(emoji: str)`: single-field insert — glyph into `_anchor_input` only; `_hidden_input` untouched
+- `BlindTagWindow._do_encode`: now calls `strip_plane14(anchor)` before encoding (prevents silent double-encoding from pasted tagged strings) and `_resolve_anchor_tokens(anchor, self._library)` before `core.encode()`
+- `_CARD_CONTENT[2]` ("Emoji aliases") body updated to reflect format-agnostic anchor input and resolution pipeline
+- `tests/test_widget.py`: added `test_cell_count_matches_library`, `test_click_inserts_glyph` (replaces dual-field `test_click_appends_alias`), `TestEncodeResolution` class (7 headless tests)
+- `catalog/test_definitions.json` `blindtag-widget` notes updated to reflect glyph-insert contract and `TestEncodeResolution` scope
+
+
 
 ## [1.0.0] — 2026-05-30
 
