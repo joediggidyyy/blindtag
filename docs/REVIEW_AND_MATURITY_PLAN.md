@@ -215,9 +215,15 @@ Current `CHANGELOG.md` has only the `[1.0.0]` release entry. Per Keep-a-Changelo
 1. `git push --force origin main` (joediggidyyy sign-off required)
 2. Verify GitHub Actions CI passes on arrival
 
+### Pass K — Polymath aesthetic alignment & UI hygiene (execute BEFORE Pass I)
+
+**See full Pass K section below for detailed spec.**
+
+Summary: palette migration to cool-navy ecosystem, Clip Watch checkbox → glow button, taskbar icon fix, border/line token introduction, button style refresh. All changes are widget-only — no API, no tests, no CLI.
+
 ### Pass I — Background monitoring posture & notification widget (widget enhancement)
 
-**Status:** Plan locked. Implementation authorized; execute after Pass H gate confirmed.
+**Dependency:** Pass K must be executed and gated first so Pass I uses the updated color tokens throughout.
 
 **Scope:** Extend `BlindTagWindow` with a "background" posture — explicit hide, watcher stays alive, focus-stealing notification replaced by a custom ephemeral corner `NotificationWidget`. No new entry point, no `QSystemTrayIcon`, no new dependencies. All behavior lives inside the existing `blindtag-widget` entry point.
 
@@ -233,7 +239,7 @@ Current `CHANGELOG.md` has only the `[1.0.0]` release entry. Per Keep-a-Changelo
 | `"background"` | Hidden, in taskbar | Active | `NotificationWidget.show_for(preview)` |
 
 **Transitions:**
-- **→ background:** Clip Watch checkbox checked + user clicks "Hide" button in title bar. `self.hide()`, `_posture = "background"`.
+- **→ background:** Clip Watch button active (checked) + user clicks "Hide" button in title bar. `self.hide()`, `_posture = "background"`.
 - **→ foreground:** User clicks `NotificationWidget` body. `main_win.show()` / `raise_()` / `activateWindow()`, `_posture = "foreground"`. Or: user clicks taskbar entry (Qt delivers normal show/restore event).
 - **Close (X):** Always a real close — `_stop_watcher()`, `super().closeEvent(event)`. No interception. `closeEvent` is **unchanged**.
 
@@ -351,7 +357,7 @@ if self._posture == "background":
 
 **"Hide" button — title bar:**
 
-Shown only while Clip Watch is checked. Visibility is toggled inside `_toggle_watcher` (which already calls `_start_watcher` / `_stop_watcher`). The button is part of the existing frameless title bar widget. Label: `"Hide"`. Tooltip: `"Run in background — click notification to return"`.
+Shown only while Clip Watch is active. Visibility is toggled inside `_toggle_watcher` (called via `_watcher_btn.toggled` after Pass K). The button is part of the existing frameless title bar widget. Label: `"Hide"`. Tooltip: `"Run in background — click notification to return"`.
 
 Click handler:
 ```python
@@ -499,6 +505,197 @@ Execute in order. No parallelism needed — each step is small.
 
 ---
 
+### Pass K — Polymath aesthetic alignment & UI hygiene
+
+**Status:** Plan locked. Execute before Pass I. No new features; no new files.
+
+**Scope:** Migrate `widget.py` visual tokens to the cool-navy Polymath ecosystem palette, replace the Clip Watch checkbox with a glow-button, fix the taskbar icon, introduce a named border/line color token, and freshen button styles to match the Polyventure control-deck language. All changes are confined to `widget.py` and the widget's color-constant block.
+
+**Reference sources (evidence gathered):**
+- `projects/calamum-vulcan/calamum_vulcan/app/style.py` — `COLOR_TOKENS` dict (canonical ecosystem palette)
+- `docs/external/polymath-global-website/index.html` — CSS `:root` tokens (`--bg-color`, `--secondary-accent`, `--accent-color`)
+- Polyventure Control Deck screenshot — selected-button glow pattern, section header treatment, status-pill shapes
+- `blindtag/widget.py` — current palette constants and UI construction methods (lines 1–130)
+
+---
+
+#### K.1 — Palette migration
+
+Full token mapping. Every constant in `widget.py` must be updated; no old value retained.
+
+| Constant | Old value | New value | Rationale |
+|---|---|---|---|
+| `C_BG` | `#121212` | `#0a0d12` | Warm charcoal → cool deep navy (matches Vulcan `background`) |
+| `C_SECONDARY` | `#1E1E1E` | `#10161f` | → Vulcan `surface` — navy-tinted |
+| `C_SURFACE` | `#252525` | `#16212d` | → Vulcan `surface_card` — navy card |
+| `C_ACCENT` | `#4A90D9` | `#3dd5f3` | Office blue → brand cyan (Vulcan `brand`) |
+| `C_ACCENT_H` | `#5BA3F0` | `#62daf7` | Hover lightened brand cyan |
+| `C_TEXT` | `#E8E8E8` | `#edf2f7` | Warm white → cool near-white (Vulcan `text`) |
+| `C_MUTED` | `#888888` | `#9aa9bc` | Warm gray → cool blue-gray (Vulcan `muted`) |
+| `C_SUCCESS` | `#4CAF6E` | `#4fc08d` | Match Vulcan `success` |
+| `C_WARNING` | `#E8A838` | `#f3a948` | Match Vulcan `warning` |
+| `C_ERROR` | `#E85555` | `#e25757` | Match Vulcan `danger` |
+
+**New constant — add after `C_ACCENT_H`:**
+```python
+C_LINE      = "#263546"   # Navy-tinted border/divider — replaces all hardcoded #303030
+```
+
+**Hardcoded `#303030` audit:** Every occurrence of `"#303030"` in `widget.py` must be replaced with `C_LINE`. This covers: `_textbox_style()`, `_EmojiFlyout` frame border, `_GuidancePanel` border-right, `_LibraryEditorPanel` dividers, emoji grid button hover.
+
+---
+
+#### K.2 — Clip Watch: checkbox → glow button
+
+**Rationale:** Checkboxes are not in the Polymath design language. The Polyventure control-deck uses bordered buttons with a teal/cyan glow for selected states (e.g. "OPERATOR CONTROLS" with active border vs "EVIDENCE" with dim border).
+
+**Implementation spec:**
+
+Remove `QCheckBox` entirely. Replace with `QPushButton(setCheckable=True)` named `_watcher_btn`.
+
+Add two style helpers to the stylesheet-helpers block:
+
+```python
+def _clip_watch_active_style() -> str:
+    """Clip Watch button — active/checked state: cyan border glow."""
+    return (
+        f"QPushButton {{"
+        f"background-color: {C_SECONDARY}; color: {C_ACCENT}; "
+        f"border: 2px solid {C_ACCENT}; border-radius: 5px; "
+        f"font-size: 9pt; font-weight: bold; padding: 4px 12px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: {C_SURFACE}; }}"
+    )
+
+def _clip_watch_inactive_style() -> str:
+    """Clip Watch button — idle state: subtle border, muted text."""
+    return (
+        f"QPushButton {{"
+        f"background-color: transparent; color: {C_MUTED}; "
+        f"border: 1px solid {C_LINE}; border-radius: 5px; "
+        f"font-size: 9pt; padding: 5px 12px;"
+        f"}}"
+        f"QPushButton:hover {{ border-color: {C_ACCENT}; color: {C_TEXT}; }}"
+    )
+```
+
+In `_build_toggle_strip()`:
+- Remove `self._watcher_chk = QCheckBox(...)` and `stateChanged` connection
+- Add:
+  ```python
+  self._watcher_btn = QPushButton(" Clip Watch")
+  self._watcher_btn.setCheckable(True)
+  self._watcher_btn.setStyleSheet(_clip_watch_inactive_style())
+  self._watcher_btn.toggled.connect(self._toggle_watcher)
+  layout.addWidget(self._watcher_btn)
+  ```
+
+In `_toggle_watcher(self, checked: bool)`:
+```python
+def _toggle_watcher(self, checked: bool) -> None:
+    if checked:
+        self._watcher_btn.setStyleSheet(_clip_watch_active_style())
+        self._start_watcher()
+    else:
+        self._watcher_btn.setStyleSheet(_clip_watch_inactive_style())
+        self._stop_watcher()
+```
+
+Also update `_toggle_watcher_hotkey` to use `self._watcher_btn.setChecked(not self._watcher_btn.isChecked())`.
+
+**Pass I impact:** Pass I's `_start_watcher()` / `_stop_watcher()` checks watcher state via `_watcher_btn.isChecked()` instead of the old `_watcher_chk.isChecked()`. Update Pass I §I.3 accordingly — the "Hide" button visibility toggle is driven by `_watcher_btn.toggled` signal, not a checkbox signal.
+
+**QCheckBox import:** After this change, `QCheckBox` is no longer used in `widget.py`. Remove from the `from PySide6.QtWidgets import (...)` block.
+
+---
+
+#### K.3 — Taskbar icon fix
+
+**Gap:** `run_widget()` calls `QApplication.instance() or QApplication(sys.argv)` but never sets an app-level icon. For frameless windows (`Qt.FramelessWindowHint`), the per-window `setWindowIcon()` does not populate the Windows taskbar entry — the app-level icon is used instead.
+
+**Fix — in `run_widget()`, after `app =` and before `app.setStyleSheet(...)`:**
+```python
+_app_icon_path = Path(__file__).resolve().parent.parent / "assets" / "images" / "blindtag_thumbnail_basic.png"
+if _app_icon_path.exists():
+    app.setWindowIcon(QIcon(str(_app_icon_path)))
+```
+
+**Note:** `blindtag_thumbnail_basic.png` is confirmed present at `assets/images/`. `blindtag_logo.png` is also present and is used in the title bar; the thumbnail variant is the correct choice for the taskbar (square crop, no wordmark).
+
+---
+
+#### K.4 — Button style refresh
+
+All three existing button helpers (`_btn_primary_style`, `_btn_secondary_style`, `_btn_ghost_style`) and the two toggle helpers (`_toggle_active_style`, `_toggle_inactive_style`) will pick up the new palette automatically via the updated constants. No structural change needed.
+
+One enhancement: `_btn_primary_style` should add a matching 1px brand border for a subtle polymath-era definition:
+```python
+f"border: 1px solid {C_ACCENT}; "   # add after "border: none;" removal
+```
+This matches the Polyventure pattern where primary actions carry a visible brand border (not just a filled background), giving the filled button a crisper frame without adding glow.
+
+---
+
+#### K.5 — Section header label update
+
+`_section_label` outputs uppercase section labels. Currently style is `C_MUTED` color. After palette update, `C_MUTED = "#9aa9bc"` is a cool blue-gray — this is slightly lighter and cooler than the old warm gray and will naturally look more consistent with the Polyventure header treatment. No code change needed; the constant update achieves it.
+
+---
+
+#### K.6 — Swept-in items from previous pass plans
+
+The following items were specified in earlier pass plans but not yet executed. They are formally swept into Pass K as the canonical implementation home:
+
+| Item | Source | Action |
+|---|---|---|
+| Taskbar icon (app-level) | Section 10 "Preserved design decisions" | §K.3 above |
+| `C_LINE` border token | Section 1.3 (`#303030` hardcoded) | §K.1 — new constant + sweep |
+| Clip Watch as non-checkbox control | Section 1.3 widget finding | §K.2 above |
+| `QCheckBox` import removal | Code hygiene | Remove from imports after K.2 |
+| `_APP_STYLESHEET` palette accuracy | All passes | Resolved by §K.1 token update |
+
+---
+
+#### K.7 — Calamum test contract
+
+No new test classes needed. The aesthetic changes are stylistic only — no logic changes. Existing `blindtag-widget` test suite must still pass at `decision: go` through `blindtag-all`.
+
+Gate command (same as Pass H/I):
+```powershell
+$cal = Join-Path "c:\Users\joedi\Documents\CodeSentinel-1\.venv-core\Scripts" "calamum.exe"
+$proj = "c:\Users\joedi\Documents\CodeSentinel-1\projects\blindtag"
+& $cal "test" "run" "blindtag-all" "--project" $proj | Tee-Object -FilePath "report_tmp\pass_k_gate.txt"
+```
+
+---
+
+#### K.8 — Deliverables and sequence
+
+| # | Artifact | Action | Notes |
+|---|---|---|---|
+| 1 | `blindtag/widget.py` | MODIFY | Update color constants (§K.1); add `C_LINE`; replace `#303030` occurrences; add glow-button style helpers (§K.2); replace `QCheckBox` with `QPushButton` (§K.2); fix `run_widget()` taskbar icon (§K.3); freshen `_btn_primary_style` border (§K.4); remove `QCheckBox` import |
+| 2 | `CHANGELOG.md` | MODIFY | Pass K entry after gate pass |
+| **Gate** | `calamum test run blindtag-all` | RUN | `decision: go` required before commit and before Pass I begins |
+
+---
+
+#### K.9 — Visual reference summary
+
+The target aesthetic (verified across sources):
+
+| Property | Target value | Source |
+|---|---|---|
+| Background | Deep cool navy, not warm charcoal | Vulcan `#0a0d12`, website `#0a0a0a` |
+| Brand/accent | Cyan `#3dd5f3` | Vulcan `brand` token |
+| Muted text | Cool blue-gray `#9aa9bc` | Vulcan `muted` |
+| Borders | Navy-tinted `#263546` | Vulcan `line` |
+| Selected button | Brand-color border (2px) + transparent/tinted bg | Polyventure OPERATOR CONTROLS pattern |
+| Idle button | 1px muted border, no fill, dim text | Polyventure EVIDENCE pattern |
+| Hover transition | Border lightens to brand; text brightens | Polyventure hover behavior |
+| Primary CTA | Filled brand color + 1px border frame | Polyventure primary action style |
+
+---
+
 ### Pass J — Logging and reporting infrastructure (scope definition in this session; implementation follows Pass H)
 
 Blindtag's primary use model is **imported and used via API by other applications**. This pass delivers dense, structured, tiered logging and reporting. Known inputs:
@@ -586,8 +783,9 @@ No secrets. No network. `HKCU` registry write is user-authorized opt-in only. Al
 | Calamum config | DONE — baseline established Pass D |
 | CI pipeline | DONE — GitHub Actions wired Pass A |
 | Force push authorization | Pending joediggidyyy |
-| Pass I plan | LOCKED — widget-based path; implementation authorized after Pass H gate |
+| Pass K plan | LOCKED — aesthetic alignment, glow button, taskbar icon; execute before Pass I |
+| Pass I plan | LOCKED — widget-based background posture; execute after Pass K gate |
 | Tray process (§10) | DEFERRED — preserved for future pass after Pass I ships |
 | Pass J plan | PLACEHOLDER — scope definition after Pass H gate |
 
-**Post-Pass-H next action:** Execute Pass I (widget background posture + `NotificationWidget`), then initiate Pass J scope definition session with joediggidyyy.
+**Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass J (logging).
