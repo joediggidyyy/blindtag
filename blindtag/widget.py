@@ -55,7 +55,9 @@ Dependencies: PySide6 >= 6.8
 
 from __future__ import annotations
 
+import ctypes
 import json
+import platform
 import re
 import shutil
 import sys
@@ -437,9 +439,13 @@ class _GuidancePanel(QWidget):
     def __init__(self, parent: "BlindTagWindow") -> None:
         super().__init__(parent)
         self.setFixedWidth(200)
+        # Use a class-specific selector so the global QWidget{background} rule
+        # in _APP_STYLESHEET cannot bleed through via inheritance.
         self.setStyleSheet(
-            f"background-color: {C_SECONDARY}; border-right: 1px solid {C_LINE};"
+            f"_GuidancePanel, QWidget#guidance_panel {{"
+            f" background-color: {C_SECONDARY}; border-right: 1px solid {C_LINE}; }}"
         )
+        self.setObjectName("guidance_panel")
         self.hide()
 
         layout = QVBoxLayout(self)
@@ -695,7 +701,7 @@ class _LibraryEditorPanel(QWidget):
             f"QPushButton {{ background: transparent; color: {C_MUTED}; border: none; font-size: 10pt; }}"
             f"QPushButton:hover {{ color: {C_ERROR}; }}"
         )
-        btn_del.clicked.connect(lambda checked=False, em=emoji_str: self._do_delete(em))
+        btn_del.clicked.connect(lambda checked=False, em=entry["emoji"]: self._do_delete(em))
         hl.addWidget(btn_del)
 
         return row
@@ -1392,6 +1398,15 @@ def run_widget() -> None:
     installed by pyproject.toml.
     """
     app = QApplication.instance() or QApplication(sys.argv)
+    # Register a unique App User Model ID so Windows groups the taskbar button
+    # under the app icon rather than the python.exe identity.
+    if platform.system() == "Windows":
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "Polymath.BlindTag.Widget.1"
+            )
+        except Exception:  # noqa: BLE001
+            pass
     _app_icon_path = Path(__file__).resolve().parent.parent / "assets" / "images" / "blindtag_thumbnail_basic.png"
     if _app_icon_path.exists():
         app.setWindowIcon(QIcon(str(_app_icon_path)))

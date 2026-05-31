@@ -50,6 +50,8 @@ dev = [
 [project.scripts]
 blindtag        = "blindtag.cli:main"
 blindtag-api    = "blindtag.cli:_api_shim"
+
+[project.gui-scripts]
 blindtag-widget = "blindtag.cli:_widget_shim"
 
 [tool.setuptools.packages.find]
