@@ -85,6 +85,7 @@ from PySide6.QtWidgets import (
 
 from .core import decode, encode, strip_plane14
 from .exceptions import InvalidPayloadError
+from .notification import NotificationWidget
 
 # ─── Asset paths ──────────────────────────────────────────────────────────────
 
@@ -798,6 +799,14 @@ class _TitleBar(QWidget):
         self._btn_help.setStyleSheet(_btn_ghost_style())
         layout.addWidget(self._btn_help)
 
+        # Hide-to-background button — shown only while Clip Watch is active
+        self._btn_hide = QPushButton("Hide")
+        self._btn_hide.setFixedSize(46, 26)
+        self._btn_hide.setToolTip("Run in background \u2014 click notification to return")
+        self._btn_hide.setStyleSheet(_btn_ghost_style())
+        self._btn_hide.setVisible(False)
+        layout.addWidget(self._btn_hide)
+
         layout.addStretch()
 
         # Minimize button
@@ -870,6 +879,10 @@ class BlindTagWindow(QMainWindow):
         self._emoji_flyout: Optional[_EmojiFlyout] = None
         self._prev_panel: str = "encode"  # restore after library editor
 
+        # Background posture state
+        self._posture: str = "foreground"
+        self._bg_notif: NotificationWidget = NotificationWidget(self, NOTIFY_DURATION_MS)
+
         # Emoji library
         self._library = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
         warn = getattr(self._library, "_warn", None)
@@ -883,6 +896,7 @@ class BlindTagWindow(QMainWindow):
 
         self._title_bar = _TitleBar(self)
         self._title_bar._btn_help.clicked.connect(self._toggle_guidance_panel)
+        self._title_bar._btn_hide.clicked.connect(self._hide_to_background)
         root.addWidget(self._title_bar)
 
         self._toggle_strip = self._build_toggle_strip()
@@ -1263,9 +1277,11 @@ class BlindTagWindow(QMainWindow):
     def _toggle_watcher(self, checked: bool) -> None:
         if checked:
             self._watcher_btn.setStyleSheet(_clip_watch_active_style())
+            self._title_bar._btn_hide.setVisible(True)
             self._start_watcher()
         else:
             self._watcher_btn.setStyleSheet(_clip_watch_inactive_style())
+            self._title_bar._btn_hide.setVisible(False)
             self._stop_watcher()
 
     def _start_watcher(self) -> None:
@@ -1294,6 +1310,9 @@ class BlindTagWindow(QMainWindow):
         """Fires on the main thread when clipboard content changes."""
         if not self._watcher_active:
             return
+        # Self-detection guard: user is looking at the encode result directly.
+        if self._posture == "foreground" and self.isActiveWindow():
+            return
         text = QApplication.clipboard().text()
         if not text:
             return
@@ -1305,24 +1324,29 @@ class BlindTagWindow(QMainWindow):
             pass
 
     def _notify_payload(self, message: str, raw: str) -> None:
-        """Surface notification overlay and populate Decode panel."""
-        self._dismiss_notify()
+        """Surface notification and populate Decode panel."""
+        preview = message[:48] + ("\u2026" if len(message) > 48 else "")
 
+        if self._posture == "background":
+            # Window is hidden — deliver corner notification instead.
+            self._bg_notif.show_for(preview)
+            return
+
+        # Foreground path — raise window and show inline banner.
+        self._dismiss_notify()
         self._show_decode()
         self._raw_input.setPlainText(raw)
         self._decode_output.setPlainText(message)
         self._decode_output.setStyleSheet(_textbox_style(C_SUCCESS, C_SURFACE))
 
-        preview = message[:48] + ("…" if len(message) > 48 else "")
-        self._set_status(f"⬡  PAYLOAD DETECTED  →  \"{preview}\"", C_ACCENT)
+        self._set_status(f"\u2b21  PAYLOAD DETECTED  \u2192  \"{preview}\"", C_ACCENT)
 
-        # Floating notification banner (child widget — no external window)
-        notif = QLabel(f"⬡  PAYLOAD DETECTED  ·  {preview}", self)
+        notif = QLabel(f"\u2b21  PAYLOAD DETECTED  \u00b7  {preview}", self)
         notif.setAlignment(Qt.AlignCenter)
         notif.setStyleSheet(
-            f"background-color: {C_ACCENT}; color: white; "
-            f"font-weight: bold; font-size: 10pt; "
-            f"border-radius: 8px; padding: 9px 14px;"
+            "background-color: #14384f; color: #c9e8ef; "
+            "font-weight: bold; font-size: 10pt; "
+            "border: 1px solid #2a6b85; border-radius: 8px; padding: 9px 14px;"
         )
         notif.adjustSize()
         w = int(self.width() * 0.88)
@@ -1333,7 +1357,6 @@ class BlindTagWindow(QMainWindow):
 
         self._notify_timer.start(NOTIFY_DURATION_MS)
 
-        # Bring window to front
         self.raise_()
         self.activateWindow()
         self.setWindowOpacity(1.0)
@@ -1382,6 +1405,16 @@ class BlindTagWindow(QMainWindow):
     # =========================================================================
     # Window management
     # =========================================================================
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        """Restore foreground posture whenever the window becomes visible."""
+        self._posture = "foreground"
+        super().showEvent(event)
+
+    def _hide_to_background(self) -> None:
+        """Enter background posture: hide window, watcher stays alive."""
+        self._posture = "background"
+        self.hide()
 
     def closeEvent(self, event) -> None:
         self._stop_watcher()

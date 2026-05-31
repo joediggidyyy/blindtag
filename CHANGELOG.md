@@ -64,6 +64,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `QCheckBox` removed from PySide6.QtWidgets import block
 - Docstring Visual Identity section and Panel Layout diagram updated to reflect new tokens and button notation
 
+**Pass K (palette correction)** — COMPLETE (commit `be23088`, 147/147):
+- All button fills replaced with depth-based design: primary action uses deep steel-teal `#14384f` (border `#2a6b85`, text `#c9e8ef`), hover `#1a4d68`
+- `_clip_watch_active_style`: transparent background, text `#7ab8c9`, cyan border — no fill
+- `_clip_watch_inactive_style`: transparent, muted text, `C_LINE` border — no fill
+- `_toggle_active_style`: `#1c2d3d` surface + full-brightness `C_TEXT` — no accent fill
+- `_toggle_inactive_style`: transparent, `C_MUTED` text, transparent border
+
+**Pass L** — COMPLETE (commit `7635a52`, calamum `20260531T053853Z-blindtag-all`, `decision: go`, 147/147):
+- `run_widget()`: `ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Polymath.BlindTag.Widget.1")` added; Windows groups the taskbar button under the app icon
+- `_GuidancePanel.__init__`: `setObjectName("guidance_panel")` + scoped QSS selector `QWidget#guidance_panel { ... }` prevent style bleed into adjacent panels
+- `BlindTagWindow._make_row()` lambda: fixed `NameError: emoji_str`; default-argument capture `em=entry["emoji"]` applied
+- `blindtag-widget` moved from `[project.scripts]` to `[project.gui-scripts]` in `pyproject.toml`; eliminates terminal window on Windows launch; `blindtag.cli._widget_shim` is the backing entry
+
+**Pass I** — COMPLETE (calamum `20260531T060157Z-blindtag-all`, `decision: go`, 160/160):
+- `blindtag/notification.py` (NEW) — `NotificationWidget`: ephemeral bottom-right corner notification for background monitoring posture; auto-dismiss after `NOTIFY_DURATION_MS`; body click restores main window; `×` button dismisses silently; hover pauses timer; zero import dependency on `widget.py`
+- `BlindTagWindow._posture` state (`"foreground"` / `"background"`) controls routing in `_notify_payload`
+- `BlindTagWindow._bg_notif: NotificationWidget` — single instance owned by `BlindTagWindow`, receives `show_for(preview)` calls while hidden
+- `_TitleBar._btn_hide` — "Hide" button added; visible only when Clip Watch is active; click calls `_hide_to_background()`; `_toggle_watcher()` drives visibility
+- `BlindTagWindow._hide_to_background()` — sets posture to `"background"` and hides window; watcher stays alive
+- `BlindTagWindow.showEvent()` — resets posture to `"foreground"` on every window-show event
+- `_on_clipboard_change` — self-detection guard added: if posture is foreground and window is active, clipboard changes from own encode operation are silently ignored
+- `_notify_payload` — posture branch at top: background posture routes to `_bg_notif.show_for(preview)` and returns early; foreground path raises window and shows inline banner (palette-aligned steel-teal fill instead of cyan)
+- `tests/test_widget.py`: added `TestNotificationWidget` (6 headless tests) and `TestBackgroundPosture` (7 tests); 147 → 160 total
+- `catalog/test_definitions.json`: `blindtag-widget` notes updated to document new test classes
+
 **Pass H** — COMPLETE (commit `d2415ca`, calamum `20260531T020332Z-blindtag-all`, `decision: go`):
 - `_resolve_anchor_tokens(text, library)` — new module-level pure function; resolves `U+XXXX` tokens to Unicode chars (with invalid codepoint / surrogate pass-through safety) and `:alias:` tokens to glyphs via library lookup; bare uppercase excluded to prevent natural-language collisions; headless-testable with no Qt dependency
 - `_EmojiFlyout._pick`: passes raw emoji glyph to `on_select` callback (was alias string)

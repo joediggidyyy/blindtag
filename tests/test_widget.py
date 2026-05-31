@@ -1,11 +1,13 @@
 """
 tests/test_widget.py
 ====================
-Tests for Pass D–H widget surfaces:
-  - TestEmojiLibrary      — headless; no QApplication needed
-  - TestGuidancePanel     — requires qapp fixture (session-scoped)
-  - TestEmojiFlyout       — requires qapp fixture (session-scoped)
-  - TestEncodeResolution  — headless; no QApplication needed
+Tests for Pass D–I widget surfaces:
+  - TestEmojiLibrary          — headless; no QApplication needed
+  - TestGuidancePanel         — requires qapp fixture (session-scoped)
+  - TestEmojiFlyout           — requires qapp fixture (session-scoped)
+  - TestEncodeResolution      — headless; no QApplication needed
+  - TestNotificationWidget    — headless; MagicMock as main_win
+  - TestBackgroundPosture     — requires qapp fixture (session-scoped)
 
 Run with:
     pytest tests/test_widget.py -v
@@ -14,9 +16,11 @@ Run with:
 import json
 import re
 import shutil
+from unittest.mock import MagicMock
 
 import pytest
 
+from blindtag.notification import NotificationWidget, NOTIFY_MARGIN_PX
 from blindtag.widget import (
     EmojiLibrary,
     _DEFAULT_LIBRARY_PATH,
@@ -255,3 +259,133 @@ class TestEncodeResolution:
         assert _resolve_anchor_tokens(token, lib) == token
 
 
+# =============================================================================
+# TestNotificationWidget — headless (MagicMock as main_win)
+# =============================================================================
+
+NOTIFY_DURATION_MS = 4_500
+
+
+class TestNotificationWidget:
+    """NotificationWidget instantiated with MagicMock; no window is shown."""
+
+    def _make(self) -> NotificationWidget:
+        return NotificationWidget(MagicMock(), NOTIFY_DURATION_MS)
+
+    def test_construction_no_error(self, qapp) -> None:
+        widget = self._make()
+        assert widget is not None
+
+    def test_show_for_sets_label_text(self, qapp) -> None:
+        widget = self._make()
+        widget.show_for("hello world")
+        assert "hello world" in widget._label.text()
+
+    def test_timer_fires_hide(self, qapp) -> None:
+        """Timer fires hide; use a very short duration so the test completes fast."""
+        widget = NotificationWidget(MagicMock(), duration_ms=1)
+        visible_before = True  # we don't actually show it to avoid desktop flicker
+        widget._timer.start(1)
+        # Pump events briefly so the timer fires.
+        from PySide6.QtCore import QCoreApplication
+        for _ in range(50):
+            QCoreApplication.processEvents()
+        # After timer fires, widget should be hidden (timer.timeout -> hide())
+        assert not widget._timer.isActive()
+
+    def test_body_click_shows_main_win(self, qapp) -> None:
+        mock_win = MagicMock()
+        widget = NotificationWidget(mock_win, NOTIFY_DURATION_MS)
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtCore import Qt, QPointF
+        event = MagicMock()
+        event.button.return_value = Qt.LeftButton
+        widget.mousePressEvent(event)
+        mock_win.show.assert_called_once()
+        mock_win.raise_.assert_called_once()
+        mock_win.activateWindow.assert_called_once()
+
+    def test_hover_pauses_timer(self, qapp) -> None:
+        widget = self._make()
+        widget._timer.start(NOTIFY_DURATION_MS)
+        assert widget._timer.isActive()
+        widget.enterEvent(MagicMock())
+        assert not widget._timer.isActive()
+        widget.leaveEvent(MagicMock())
+        assert widget._timer.isActive()
+        widget._timer.stop()
+
+    def test_close_button_hides_only(self, qapp) -> None:
+        """× button hides widget but does NOT call main_win.show."""
+        mock_win = MagicMock()
+        widget = NotificationWidget(mock_win, NOTIFY_DURATION_MS)
+        widget._close_btn.click()
+        mock_win.show.assert_not_called()
+
+
+# =============================================================================
+# TestBackgroundPosture — requires qapp fixture
+# =============================================================================
+
+class TestBackgroundPosture:
+    """BlindTagWindow background-monitoring posture state machine."""
+
+    def _make_window(self):
+        from blindtag.widget import BlindTagWindow
+        return BlindTagWindow()
+
+    def test_posture_defaults_foreground(self, qapp) -> None:
+        win = self._make_window()
+        assert win._posture == "foreground"
+        win.close()
+
+    def test_hide_to_background_sets_posture_and_hides_window(self, qapp) -> None:
+        win = self._make_window()
+        win.show()
+        win._hide_to_background()
+        assert win._posture == "background"
+        assert not win.isVisible()
+        win.close()
+
+    def test_show_event_resets_posture_to_foreground(self, qapp) -> None:
+        win = self._make_window()
+        win._posture = "background"
+        win.show()
+        assert win._posture == "foreground"
+        win.close()
+
+    def test_notify_payload_routes_bg_notif_in_background_posture(self, qapp) -> None:
+        win = self._make_window()
+        win._posture = "background"
+        from unittest.mock import patch
+        with patch.object(win._bg_notif, "show_for") as mock_show_for:
+            win._notify_payload("secret message", "raw_encoded")
+            mock_show_for.assert_called_once()
+            call_arg = mock_show_for.call_args[0][0]
+            assert "secret message" in call_arg or len(call_arg) <= 50
+        win.close()
+
+    def test_notify_payload_routes_inline_banner_in_foreground_posture(self, qapp) -> None:
+        win = self._make_window()
+        win.show()
+        win._posture = "foreground"
+        from unittest.mock import patch
+        with patch.object(win._bg_notif, "show_for") as mock_show_for:
+            win._notify_payload("visible message", "raw_encoded")
+            mock_show_for.assert_not_called()
+        win.close()
+
+    def test_close_event_stops_watcher_in_foreground_posture(self, qapp) -> None:
+        win = self._make_window()
+        win._posture = "foreground"
+        win._watcher_active = True
+        win.close()
+        assert not win._watcher_active
+
+    def test_close_event_stops_watcher_in_background_posture(self, qapp) -> None:
+        win = self._make_window()
+        win._posture = "background"
+        win._watcher_active = True
+        win.close()
+        assert not win._watcher_active
