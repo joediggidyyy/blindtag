@@ -203,6 +203,7 @@ Current `CHANGELOG.md` has only the `[1.0.0]` release entry. Per Keep-a-Changelo
 3. Fix `Optional` → `str | None` annotation style
 4. Add `__all__` to `blindtag/core.py` and `blindtag/__init__.py`
 5. Fix build backend in `pyproject.toml`
+6. **Add logging hook reservation**: wire `logging.getLogger("blindtag")` in `blindtag/cli.py` via `_configure_logging()`; add `logging.getLogger(__name__)` calls (no handler attachment) to `core.py` and `api.py`; see CLI_SCHEMA.md — Implementation notes — Logging architecture for the exact contract. This hook is required so Pass J can attach the structured handler without CLI code changes.
 
 ### Pass D — Calamum baseline
 1. Install/configure Calamum in the blindtag venv
@@ -214,16 +215,18 @@ Current `CHANGELOG.md` has only the `[1.0.0]` release entry. Per Keep-a-Changelo
 1. `git push --force origin main` (joediggidyyy sign-off required)
 2. Verify GitHub Actions CI passes on arrival
 
-### Pass I — Backend/API reporting layer (scope TBD, plan after Pass H)
-blindtag requires the full reporting capabilities expected of a calamum product. Scope definition deferred until Pass H (widget) is complete and gated. This pass will cover at minimum:
-- Structured operation history: encode/decode events written as retained evidence artifacts
-- API reporting endpoints (retrieve operation log, export evidence)
-- Storage layer selection (SQLite, JSON line-log, or equivalent)
-- Auth/transport scope decision: localhost-only vs. broader exposure, with corresponding invariant 5 settlement
-- New calamum catalog lanes covering the reporting surface
-- Re-evaluation of security invariants 2, 5, 7, 8 against the reporting layer design
+### Pass J — Logging and reporting infrastructure (scope definition in this session; implementation follows Pass H)
 
-**Do not begin Pass I scope definition until joediggidyyy initiates the planning session after Pass H gate.**
+Blindtag's primary use model is **imported and used via API by other applications**. This pass delivers dense, structured, tiered logging and reporting. Known inputs:
+- Structured log handler attached to `logging.getLogger("blindtag")` at API/CLI startup
+- Per-operation log entries: timestamp, operation type, anchor/payload lengths, resolved token count, outcome
+- Tiered severity: `debug` through `critical` all meaningful; widget is always `warning`-silent
+- CLI `--log-level` raises verbosity; retained log queryable via API reporting endpoints
+- Storage layer and auth/transport scope TBD in scoping session
+- Security invariants 2, 5, 7, 8 re-evaluated against final transport/auth model
+- New calamum catalog lanes for the reporting surface
+
+**Pass J begins only after Pass H calamum gate is confirmed.**
 
 ---
 
@@ -231,20 +234,26 @@ blindtag requires the full reporting capabilities expected of a calamum product.
 
 **Status:** Placeholder — scope not yet defined. Planning deferred until Pass H (widget) is complete and gated.
 
-blindtag's intended use scope requires the full reporting capabilities expected of a calamum product. This is not a personal steganography tool with a fixed localhost perimeter — the backend and API will carry a reporting surface whose transport, auth, and evidence model are not yet determined.
+**Primary use model:** blindtag is designed to be **imported and used via API by other applications** — not as a standalone personal tool. The widget is a convenience surface; the API and importable core are the canonical consumption path. This changes the logging and reporting requirements significantly: callers need dense, structured, tiered operation evidence, not casual human-readable output.
 
-The following are known planning inputs, not decisions:
+**Logging and reporting requirements (known inputs, not final decisions):**
 
-| Topic | Planning input |
-|-------|---------------|
-| Operation history | Every encode/decode event should produce a retained evidence artifact (calamum-style report_json) |
-| API reporting endpoints | Endpoints to retrieve operation log and export evidence are expected |
-| Storage layer | Not selected — SQLite, append-only JSON log, or equivalent all viable |
-| Transport/auth scope | Not settled — localhost-only is provisional; broader exposure may be required |
-| Security invariants | Invariants 2, 5, 7, 8 must be re-evaluated against final reporting layer design |
-| Calamum catalog | New lanes will be needed for the reporting surface |
+| Requirement | Detail |
+|-------------|--------|
+| Tiered logging | `debug`, `info`, `warning`, `error`, `critical` — all five levels used deliberately |
+| Default level | `warning` for widget and library import; `info` for API server; `debug` available via CLI |
+| CLI control | `blindtag --log-level debug` raises verbosity for any subcommand except widget |
+| Library import safety | No handler attached at import time — library callers own their logging config |
+| Structured output | Operation log entries carry: timestamp, operation type, anchor length, payload length, resolved token count, outcome, error type if any |
+| Retained evidence | Every API encode/decode call produces a retained log entry queryable by callers |
+| Severity filtering | Callers can request only `error`+ events or full `debug` traces |
+| API reporting endpoints | `/log`, `/log/export`, or equivalent — exact shape TBD in scoping session |
+| Storage layer | Not selected — append-only structured log file, SQLite, or equivalent |
+| Auth/transport scope | Not settled — see invariant 5 DEFERRED status above |
 
-No implementation decisions should be made or locked for this layer until the scoping session.
+The logging hook reservation (logger namespace, no handler at import, `_configure_logging` in CLI) is implemented in Pass C. The full structured handler, retention, and reporting endpoints are implemented in Pass J.
+
+**Do not begin Pass J scope definition until joediggidyyy initiates the planning session after Pass H gate.**
 
 ---
 
@@ -261,4 +270,4 @@ No implementation decisions should be made or locked for this layer until the sc
 
 **Next authorized action:** Pass A (document & config updates, no code changes).
 
-**Post-Pass-H next action:** Initiate Pass I scope definition session with joediggidyyy.
+**Post-Pass-H next action:** Initiate Pass J scope definition session with joediggidyyy.

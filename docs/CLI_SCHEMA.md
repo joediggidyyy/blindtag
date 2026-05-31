@@ -20,7 +20,12 @@
 ## Hierarchy
 
 ```
-blindtag [--version | -V] [--help | -h]
+blindtag [--version | -V] [--help | -h] [--log-level LEVEL] [--verbose]
+  │
+  │   --log-level LEVEL   (debug|info|warning|error|critical; default: warning)
+  │                         Applied globally. Widget path defaults to silent (warning).
+  │                         API path overrides this with its own --log-level flag.
+  │   --verbose | -v        Shorthand for --log-level debug
   │
   ├── encode <anchor> <payload>
   │     --out {text,json}          (default: text)
@@ -36,8 +41,10 @@ blindtag [--version | -V] [--help | -h]
   │     --port PORT                (default: 8000)
   │     --reload                   (dev hot-reload)
   │     --log-level LEVEL          (debug|info|warning|error|critical; default: info)
+  │                                 Overrides global --log-level for the API server.
   │
   └── widget
+        (no flags; always runs at warning-level logging regardless of global flag)
 ```
 
 ---
@@ -154,7 +161,7 @@ Launch the desktop observer widget. Equivalent to the current `blindtag-widget` 
 blindtag widget
 ```
 
-No flags; the widget is self-contained. Platform notes from `run_widget.py` still apply.
+No flags; the widget is self-contained. Always runs at `warning` log level — the global `--log-level` flag has no effect on widget startup. Platform notes from `run_widget.py` still apply.
 
 **Exit codes**
 | Code | Meaning |
@@ -185,6 +192,38 @@ blindtag-widget = "blindtag.cli:_widget_shim"  # compat alias → delegates to c
 - Stdin read: `sys.stdin.read()` when `text == "-"`.
 - ASCII-only console output; no emoji in CLI paths (per SEAM code standards).
 - `--version` prints `blindtag 1.0.0` and exits 0. Reads `__version__` from `blindtag.__init__`.
+
+### Logging architecture (hooks required in Pass C; implementation in Pass J)
+
+The CLI must wire a root `logging` logger for the `blindtag` package namespace at startup, before any subcommand handler runs. This is a **hook reservation** — the full tiered logging and reporting infrastructure is implemented in Pass J, but the hook must exist in Pass C so the reporting layer can attach without touching CLI code.
+
+**Required in Pass C:**
+
+```python
+import logging
+
+def _configure_logging(level_name: str) -> None:
+    """Wire the blindtag root logger. Called once at CLI entry before subcommand dispatch."""
+    level = getattr(logging, level_name.upper(), logging.WARNING)
+    logging.getLogger("blindtag").setLevel(level)
+    # Handler intentionally absent here — the reporting layer (Pass J) will attach
+    # a structured handler. Until then, output propagates to the root logger (stderr).
+    if not logging.getLogger("blindtag").handlers:
+        _h = logging.StreamHandler()
+        _h.setFormatter(logging.Formatter("%(levelname)s [%(name)s] %(message)s"))
+        logging.getLogger("blindtag").addHandler(_h)
+        logging.getLogger("blindtag").propagate = False
+```
+
+**Widget path**: `_configure_logging("warning")` regardless of global flag. Do not pass the global flag into the widget subcommand.
+
+**API path**: `_configure_logging(api_args.log_level)` overrides the global level for the server process.
+
+**Codec paths** (`encode`, `decode`, `strip`): use the global `--log-level` value; default `warning` means no output for everyday use.
+
+**Key design constraint**: the `blindtag` package is intended to be **imported and used via API by other applications**. The root logger must never attach a handler unconditionally at import time — only the CLI entry point configures handlers. Library consumers configure their own logging. This means:
+- `blindtag/core.py`, `blindtag/api.py` use `logging.getLogger(__name__)` only — no `basicConfig`, no handler attachment at module level.
+- The reporting layer (Pass J) attaches a structured file handler to `logging.getLogger("blindtag")` at runtime when invoked via the API or CLI.
 
 ---
 
