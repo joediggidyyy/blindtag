@@ -7,6 +7,18 @@
 
 ---
 
+## Handoff Gate — Standing Rule (non-negotiable)
+
+> **A pass is not complete until ORACL has personally launched the application from the normal user path, observed it running, and confirmed the expected changes are visible.**
+
+- **User launch path** = `blindtag-widget.exe` (the installed console-script / gui-script shim in `.venv-core\Scripts\`)
+- After any `pyproject.toml` entry-point change, `pip install -e .` must be run before the live test to regenerate shims
+- The gate clears only when: shim type is verified → widget launches with no terminal → new UI/behavior is visually confirmed
+- Calamum `decision: go` is a necessary condition but not sufficient — it covers automated tests only, not the live launch path
+- This rule applies to every pass that modifies `widget.py`, entry points, or install configuration
+
+---
+
 ## TL;DR
 
 The codec engine and API are well-written and the test suite is thorough for the happy-path and adversarial-input lanes. The primary gaps are: missing Calamum test configuration, no CI pipeline, an unresolved test ambiguity in the TAG_CANCEL-only case, absent widget tests, a deprecated build backend declaration, missing project metadata in `pyproject.toml`, no `.env.example`, no request tracing on the API, and no GitHub Actions workflow. All are plannable; none require architectural changes.
@@ -500,8 +512,19 @@ No change. No new entry point.
 | 4 | `catalog/test_definitions.json` | MODIFY | Requires (3) — update `blindtag-widget` notes field |
 | 5 | `CHANGELOG.md` | MODIFY | Requires gate pass |
 | **Gate** | `calamum test run blindtag-all --project <path>` | RUN | After (1–4); `decision: go` required before (5) and commit |
+| 6 | **Package reinstall** | `pip install -e .` in `.venv-core` | Required after Pass L `pyproject.toml` change moved `blindtag-widget` to `[project.gui-scripts]`; regenerates `blindtag-widget.exe` shim as `pythonw`-backed |
+| 7 | **Live visual test** | Launch `blindtag-widget`, observe: no terminal, Hide button present, background posture + corner notification fire | After (6); must be run and observed before lane closeout |
 
-Execute in order. No parallelism needed — each step is small.
+**Status (commit `c9cbb9b`):** Steps 1–5 + Gate complete. Steps 6–7 complete — `pip install -e .` run, shim confirmed `pythonw.exe`-backed, widget launched live from user path (PID 8656), no terminal window, Pass I changes active.
+
+**Live test command (exact, copy-paste-ready):**
+```powershell
+Set-Location "c:\Users\joedi\Documents\CodeSentinel-1\projects\blindtag"
+& "c:\Users\joedi\Documents\CodeSentinel-1\.venv-core\Scripts\pip.exe" install -e .
+& "c:\Users\joedi\Documents\CodeSentinel-1\.venv-core\Scripts\blindtag-widget.exe"
+```
+
+Execute in order. Reinstall must precede widget launch to flush the stale shim.
 
 ---
 
