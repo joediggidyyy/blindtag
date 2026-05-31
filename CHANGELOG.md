@@ -53,7 +53,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `_LibraryEditorPanel` — fourth stack panel; per-entry rows with glyph, active alias, codes pick list, label, delete; add-entry form; writes to `assets/emoji_library_default.json`
 - `tests/test_widget.py`: 15 tests passing (9 `TestEmojiLibrary` + 3 `TestGuidancePanel` + 3 `TestEmojiFlyout`)
 
-**Pass H** — COMPLETE (calamum run pending gate below):
+**Pass H** — COMPLETE (commit `d2415ca`, calamum `20260531T020332Z-blindtag-all`, `decision: go`):
 - `_resolve_anchor_tokens(text, library)` — new module-level pure function; resolves `U+XXXX` tokens to Unicode chars (with invalid codepoint / surrogate pass-through safety) and `:alias:` tokens to glyphs via library lookup; bare uppercase excluded to prevent natural-language collisions; headless-testable with no Qt dependency
 - `_EmojiFlyout._pick`: passes raw emoji glyph to `on_select` callback (was alias string)
 - `BlindTagWindow._insert_alias` renamed to `_insert_emoji(emoji: str)`: single-field insert — glyph into `_anchor_input` only; `_hidden_input` untouched
