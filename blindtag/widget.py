@@ -94,7 +94,7 @@ _DEFAULT_LIBRARY_PATH = Path(__file__).resolve().parent.parent / "assets" / "emo
 C_BG        = "#0a0d12"   # Deep Cool Navy  — window background
 C_SECONDARY = "#10161f"   # Navy Surface     — title bar, toggle strip, status bar
 C_SURFACE   = "#16212d"   # Navy Card        — read-only output fields
-C_ACCENT    = "#3dd5f3"   # Brand Cyan       — primary CTA, watcher indicator
+C_ACCENT    = "#3dd5f3"   # Brand Cyan       — indicators and tints only; never a fill
 C_ACCENT_H  = "#62daf7"   # Cyan Highlight   — hover state
 C_LINE      = "#263546"   # Navy-tinted Line — borders and dividers
 C_TEXT      = "#edf2f7"   # Cool Near-White  — primary text
@@ -282,36 +282,37 @@ def _textbox_style(color: str = C_TEXT, bg: str = C_SECONDARY) -> str:
 
 
 def _btn_primary_style() -> str:
+    # Primary action — deepest visual weight, through depth not brightness.
     return (
         f"QPushButton {{"
-        f"background-color: {C_ACCENT}; color: #0a0d12; "
-        f"font-weight: bold; border: 1px solid {C_ACCENT}; border-radius: 6px; padding: 8px 12px;"
+        f"background-color: #14384f; color: #c9e8ef; "
+        f"font-weight: bold; border: 1px solid #2a6b85; border-radius: 6px; padding: 8px 12px;"
         f"}}"
-        f"QPushButton:hover {{ background-color: {C_ACCENT_H}; border-color: {C_ACCENT_H}; }}"
+        f"QPushButton:hover {{ background-color: #1a4d68; border-color: #3a8faa; }}"
     )
 
 
 def _clip_watch_active_style() -> str:
-    """Clip Watch button — active/checked state: brand cyan border glow."""
+    """Clip Watch button — active: soft teal text and single-pixel teal border. No fill."""
     return (
         f"QPushButton {{"
-        f"background-color: {C_SECONDARY}; color: {C_ACCENT}; "
-        f"border: 2px solid {C_ACCENT}; border-radius: 5px; "
-        f"font-size: 9pt; font-weight: bold; padding: 4px 12px;"
+        f"background-color: transparent; color: #7ab8c9; "
+        f"border: 1px solid #2a6b85; border-radius: 5px; "
+        f"font-size: 9pt; padding: 5px 12px;"
         f"}}"
-        f"QPushButton:hover {{ background-color: {C_SURFACE}; }}"
+        f"QPushButton:hover {{ color: {C_TEXT}; border-color: #3a8faa; }}"
     )
 
 
 def _clip_watch_inactive_style() -> str:
-    """Clip Watch button — idle state: subtle border, muted text."""
+    """Clip Watch button — idle: barely visible; recedes until needed."""
     return (
         f"QPushButton {{"
         f"background-color: transparent; color: {C_MUTED}; "
         f"border: 1px solid {C_LINE}; border-radius: 5px; "
         f"font-size: 9pt; padding: 5px 12px;"
         f"}}"
-        f"QPushButton:hover {{ border-color: {C_ACCENT}; color: {C_TEXT}; }}"
+        f"QPushButton:hover {{ border-color: #2a6b85; color: {C_TEXT}; }}"
     )
 
 
@@ -336,21 +337,24 @@ def _btn_ghost_style() -> str:
 
 
 def _toggle_active_style() -> str:
+    # Selected mode: elevated surface + bright text. No fill color.
+    # Active state is read through text brightness vs inactive muting.
     return (
         f"QPushButton {{"
-        f"background-color: {C_ACCENT}; color: #FFFFFF; "
-        f"border: none; border-radius: 4px; padding: 6px 18px;"
+        f"background-color: #1c2d3d; color: {C_TEXT}; "
+        f"border: 1px solid {C_LINE}; border-radius: 4px; padding: 6px 18px;"
         f"}}"
     )
 
 
 def _toggle_inactive_style() -> str:
+    # Unselected mode: transparent, muted text. Fades to background.
     return (
         f"QPushButton {{"
-        f"background-color: {C_SURFACE}; color: {C_TEXT}; "
-        f"border: 1px solid {C_LINE}; border-radius: 4px; padding: 6px 18px;"
+        f"background-color: transparent; color: {C_MUTED}; "
+        f"border: 1px solid transparent; border-radius: 4px; padding: 6px 18px;"
         f"}}"
-        f"QPushButton:hover {{ background-color: #1d2c3d; }}"
+        f"QPushButton:hover {{ color: {C_TEXT}; }}"
     )
 
 
