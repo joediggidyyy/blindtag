@@ -97,7 +97,7 @@
     {
       "id": "blindtag-widget",
       "title": "BlindTag Widget — Library, Guidance Panel, Emoji Selector",
-      "summary": "Headless unit tests for the EmojiLibrary load/save/validate logic; panel open/close smoke; flyout cell count and alias-append contract; requires QApplication fixture from conftest.py for widget tests.",
+      "summary": "Headless unit tests for the EmojiLibrary load/save/validate logic; panel open/close smoke; flyout cell count and glyph-insert contract; encode resolution pipeline (U+XXXX and :alias: token resolution); requires QApplication fixture from conftest.py for widget tests.",
       "status": "active",
       "category": "integration",
       "selector_policy": "exact-name-only",
@@ -118,7 +118,7 @@
             "command": ["{python}", "-m", "pytest", "tests/test_widget.py", "-v", "--tb=short"],
             "expected_artifacts": ["stdout", "stderr"],
             "evidence_requirements": ["stdout_capture", "stderr_capture"],
-            "notes": "EmojiLibrary schema, validation, add/remove, alias selection (headless). GuidancePanel and EmojiFlyout smokes via QApplication fixture."
+            "notes": "EmojiLibrary schema, validation, add/remove, alias selection (headless). GuidancePanel and EmojiFlyout smokes via QApplication fixture. TestEncodeResolution: U+XXXX and :alias: resolve pipeline, passthrough for invalid/unknown tokens (headless)."
           }
         ],
         "sandbox_test": [],

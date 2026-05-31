@@ -126,6 +126,7 @@ The `☺` button (`26×26`, `_btn_ghost_style()`) opens the flyout. It is anchor
 - Background: `C_SURFACE` (`#252525`), border `1px solid #303030`
 - Each cell shows **only the emoji glyph** — no format text in the flyout cells
 - Clicking a cell performs a **single-field insert** into `_anchor_input` only — appends the raw emoji glyph character
+  - The flyout's `on_select` callback passes the raw glyph (`str`) directly, not the alias string
   - **Nothing is written to `_hidden_input`** — the hidden payload field is always untouched
 - The flyout dismisses on click-outside or `Escape`
 - `Edit library` link at the bottom opens the library editor panel
@@ -280,10 +281,12 @@ Blindtag uses a declarative field-spec pattern for input handling, consistent wi
 
 **Auto-detection order** (applied by the encode resolution pipeline, not at input time):
 
-1. Scan for `U+[0-9A-Fa-f]{4,6}( U+[0-9A-Fa-f]{4,6})*` → resolve to Unicode character(s)
-2. Scan for `:[a-z0-9_]+:` or bare uppercase keywords → look up in emoji library → resolve to glyph
-3. Remaining characters (raw glyphs, plain text) → pass through unchanged
-4. Unresolvable tokens (no library match, invalid codepoint) → pass through unchanged as visible cover text
+1. Scan for `U+[0-9A-Fa-f]{4,6}( U+[0-9A-Fa-f]{4,6})*` → resolve to the corresponding Unicode character(s). Invalid codepoints (> U+10FFFF, surrogates) pass through unchanged.
+2. Scan for `:[a-z0-9_]+:` → look up in the emoji library by `codes` membership → resolve to the glyph. No library match: pass through unchanged.
+3. Remaining characters (raw glyphs, plain text) → pass through unchanged.
+4. Unresolvable tokens pass through as visible cover text — no error is raised.
+
+> **Bare uppercase keywords are excluded from the resolution pipeline.** Library entries carry uppercase `codes` values (e.g. `STAR`, `DEL`) as shorthand for the flyout tooltip and library editor display, but these are NOT resolved in the anchor text. Resolving bare uppercase would cause unintended substitutions in natural language cover text (e.g. `"I AM COMING"` triggering a library lookup). Only `U+XXXX` and `:[a-z0-9_]+:` forms are resolved.
 
 No validation error is raised for box1 input. At encode time, if the anchor contains only Plane 14 characters (which would make the output invisible), the status bar may warn — but this is an encode-time advisory, not input rejection.
 
@@ -342,7 +345,8 @@ No new Python modules. All new UI classes live in `widget.py`.
 |------------|-------|
 | `TestEmojiLibrary` (in `tests/test_widget.py`) | Load `emoji_library_default.json`; verify schema (all entries have `emoji`, `alias`, `codes`, `label`); `alias` is member of `codes`; all codes pass ASCII validation; add/remove entry; add/remove code; set active alias |
 | `TestGuidancePanel` (in `tests/test_widget.py`) | Panel opens/closes, card count matches schema, card text not empty |
-| `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking a cell inserts the raw emoji glyph into `_anchor_input` only (single-field insert); `_hidden_input` is not modified |
+| `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking a cell inserts the raw emoji glyph into `_anchor_input` only (`test_click_inserts_glyph`); `_hidden_input` is not modified |
+| `TestEncodeResolution` (in `tests/test_widget.py`) | Headless; no QApplication needed. Covers: `U+1F600` resolves to `😀`; `:smile:` resolves to `😀`; plain text passes through unchanged; invalid codepoint `U+110000` passes through unchanged; unknown alias `:notacode:` passes through unchanged |
 
 These are part of the `tests/test_widget.py` work already in Planned. The emoji/guidance implementation should ship as part of the same pass that delivers `test_widget.py`.
 
@@ -381,3 +385,24 @@ No `pytest-qt` package is required.
 ### Write-through test isolation
 
 Tests that call `EmojiLibrary.add_entry`, `EmojiLibrary.remove_entry`, or `EmojiLibrary.set_active_alias` must operate on a temporary copy of the library file. They must never write to `assets/emoji_library_default.json` during a test run. Use `shutil.copy` in the test setup to create a `tmp_path` copy.
+
+### Flyout callback interface (Pass H change)
+
+The `_EmojiFlyout` `on_select` callback signature changes from `on_select(alias: str)` to `on_select(emoji: str)`. The flyout passes the raw glyph character, not the alias string. Correspondingly:
+
+- `BlindTagWindow._insert_alias()` is renamed to `BlindTagWindow._insert_emoji(emoji: str)`
+- The method body inserts `emoji` directly into `_anchor_input`; `_hidden_input` is not touched
+- `test_click_appends_alias` is renamed to `test_click_inserts_glyph` and its assertion changes from `glyph in anchor AND alias in payload` to `glyph in anchor AND payload unchanged`
+
+### Encode resolution — implementation contract
+
+```python
+_U_TOKEN_RE = re.compile(r'U\+([0-9A-Fa-f]{4,6})(?:\ U\+([0-9A-Fa-f]{4,6}))*')
+_ALIAS_RE   = re.compile(r':[a-z0-9_]+:')
+```
+
+- Resolution is applied once, left-to-right, non-overlapping.
+- U+ resolution: for each hex string, call `chr(int(hex_str, 16))`; if `ValueError` or codepoint > `0x10FFFF`, leave the token text unchanged.
+- Alias resolution: for each `:alias:` match, look up against `EmojiLibrary.load()` (cached from init); if the token appears in any entry's `codes` list, replace with that entry's `emoji`; otherwise leave unchanged.
+- The resolved string is passed to `core.encode(resolved_anchor, hidden)`.
+- Resolution must not perform any file I/O on the hot path; the library is loaded once at `BlindTagWindow.__init__` and cached as `self._library`.
