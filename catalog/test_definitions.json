@@ -305,6 +305,72 @@
       }
     },
     {
+      "id": "blindtag-forensic",
+      "title": "BlindTag Elevated Provenance Security Layer",
+      "summary": "Focused validation for `security` / `forensic` provenance modes, tamper-evident chain and segment seals, deny-by-default executable handling, sandbox-simulated output validation, and handoff-completion posture verification.",
+      "status": "active",
+      "category": "integration",
+      "selector_policy": "exact-name-only",
+      "profiles": [
+        "default",
+        "release"
+      ],
+      "tags": [
+        "api",
+        "reporting",
+        "sandbox",
+        "signing",
+        "adversarial"
+      ],
+      "policy_flags": [
+        "deterministic-output",
+        "local-only",
+        "release-gate"
+      ],
+      "evidence_requirements": [
+        "stdout_capture",
+        "stderr_capture",
+        "report_json"
+      ],
+      "default_lanes": [
+        "pytest"
+      ],
+      "metadata": {
+        "module": "blindtag.reporting",
+        "test_file": "tests/test_reporting.py"
+      },
+      "lanes": {
+        "pytest": [
+          {
+            "id": "forensic-pytest",
+            "title": "pytest elevated provenance reporting tests",
+            "command": [
+              "{python}",
+              "-m",
+              "pytest",
+              "tests/test_reporting.py",
+              "tests/test_api.py",
+              "-k",
+              "forensic or sandbox or HighTrustProvenance or test_log_export_forensic_mode",
+              "-v",
+              "--tb=short"
+            ],
+            "expected_artifacts": [
+              "stdout",
+              "stderr"
+            ],
+            "evidence_requirements": [
+              "stdout_capture",
+              "stderr_capture"
+            ],
+            "notes": "Elevated provenance mode coverage: deny-by-default executable scopes, tamper-evident record chains, segment seals, sandbox-simulated output validation, and handoff-completion posture verification."
+          }
+        ],
+        "sandbox_test": [],
+        "empirical_test": []
+      }
+    },
+    {
       "id": "blindtag-all",
       "title": "BlindTag Full Suite",
       "summary": "Rollup lane running the complete test suite (core + API + CLI + widget). This is the pre-push baseline gate.",

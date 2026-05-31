@@ -211,6 +211,21 @@ class OperationRecord(BaseModel):
     error_type: Optional[str] = None
     detail: str
     reason: Optional[str] = None
+    policy_mode: str = "operational"
+    subject_kind: str = "text_payload"
+    source_artifact_sha256: Optional[str] = None
+    derived_artifact_sha256: Optional[str] = None
+    parent_event_id: Optional[str] = None
+    requester_id: Optional[str] = None
+    key_id: Optional[str] = None
+    scope: Optional[str] = None
+    action_phase: Optional[str] = None
+    tool_version: Optional[str] = None
+    session_id: Optional[str] = None
+    host_context: Optional[str] = None
+    previous_record_hash: Optional[str] = None
+    record_hash: Optional[str] = None
+    segment_id: Optional[str] = None
 
 
 class LogQueryResponse(BaseModel):
@@ -226,6 +241,11 @@ class LogExportRequest(BaseModel):
     request_id: Optional[str] = None
     operation: Optional[str] = None
     level: Optional[str] = None
+    policy_mode: str = Field(default="operational", pattern="^(operational|security|forensic)$")
+    action_phase: Optional[str] = Field(
+        default=None,
+        pattern="^(received|verified|exported|blocked|quarantined|unpacked|released)$",
+    )
     limit: int = Field(
         default=reporting.DEFAULT_QUERY_LIMIT,
         ge=1,
@@ -242,11 +262,13 @@ class LogExportResponse(BaseModel):
     detail: str
     export_id: str
     format: str
+    policy_mode: str
     record_count: int
     filters: dict[str, Optional[str | int]]
     artifact_family: dict[str, object]
     signature_state: dict[str, object]
     verification: dict[str, bool]
+    sandbox_assessment: Optional[dict[str, object]] = None
     next_action: str
 
 
@@ -431,6 +453,11 @@ async def log_query_endpoint(
     request_id: Optional[str] = Query(default=None),
     operation: Optional[str] = Query(default=None),
     level: Optional[str] = Query(default=None),
+    policy_mode: Optional[str] = Query(default=None, pattern="^(operational|security|forensic)$"),
+    action_phase: Optional[str] = Query(
+        default=None,
+        pattern="^(received|verified|exported|blocked|quarantined|unpacked|released)$",
+    ),
     limit: int = Query(
         default=reporting.DEFAULT_QUERY_LIMIT,
         ge=1,
@@ -444,6 +471,8 @@ async def log_query_endpoint(
             request_id=request_id,
             operation=operation,
             level=level,
+            policy_mode=policy_mode,
+            action_phase=action_phase,
             limit=limit,
         )
     except reporting.ReportingError as exc:
@@ -466,6 +495,8 @@ async def log_query_endpoint(
             "request_id": request_id,
             "operation": operation,
             "level": level,
+            "policy_mode": policy_mode,
+            "action_phase": action_phase,
             "limit": limit,
         },
         items=[OperationRecord(**item) for item in items],
@@ -487,6 +518,8 @@ async def log_export_endpoint(payload: LogExportRequest, http_request: Request) 
             request_id=payload.request_id,
             operation=payload.operation,
             level=payload.level,
+            policy_mode=payload.policy_mode,
+            action_phase=payload.action_phase,
             limit=payload.limit,
             requester_id=payload.requester_id,
             scope=payload.scope,

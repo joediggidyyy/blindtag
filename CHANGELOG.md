@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Pass R elevated provenance hardening** — `blindtag/reporting.py` now ships explicit `operational` / `security` / `forensic` modes, provenance-grade retained fields, deny-by-default executable scope enforcement, tamper-evident record chaining, segment seals, verifier-friendly Ed25519 high-trust export verification, and sandbox-simulated handoff assessment for elevated export bundles (calamum `20260531T233221Z-blindtag-forensic`, adjacent `20260531T233239Z-blindtag-reporting`, `20260531T233256Z-blindtag-api`, full-suite `20260531T233314Z-blindtag-all`)
 - **Pass J reporting substrate** — `blindtag/reporting.py` introduces a bounded JSONL-first retained operation ledger under `.blindtag/generated/reporting/`, controlled JSON/Markdown export packets with manifest/checksum sidecars, and optional privileged export signing via explicit shared-key request verification (calamum `20260531T230143Z-blindtag-reporting`, adjacent `20260531T230200Z-blindtag-api`, `20260531T230620Z-blindtag-cli`, full-suite `20260531T230637Z-blindtag-all`)
 - **Unified CLI** (`blindtag.cli`) — `blindtag` root entry point with `encode`, `decode`, `strip`, `api`, and `widget` subcommands; `--out {text,json}` flag; stdin piping via `-`; locked exit-code contract (0 success, 1 domain error, 2 usage error); see [docs/CLI_SCHEMA.md](docs/CLI_SCHEMA.md) (Pass C — `69cdda4`)
 - `blindtag/__main__.py` — enables `python -m blindtag` invocation (Pass C — `69cdda4`)
@@ -23,6 +24,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `TAG_CANCEL` round-trip assertion fix in `tests/test_core.py` (Pass B — `5a7daf9`)
 
 ### Fixed
+- BlindTag API reporting surfaces now accept `policy_mode` / `action_phase` filtering so elevated provenance exports and sandbox verification are reachable through the public localhost transport layer
+- Sandbox-simulated elevated provenance tests now validate output content and final handoff-completion posture instead of behaving like upgraded smoke tests
 - BlindTag CLI global logging bootstrap now ships: root `--log-level` and `--verbose` flags configure runtime logging without import-time handler attachment, while the widget path remains pinned to warning-level logging
 - BlindTag API request correlation now uses a single per-request `X-Request-Id` value for both the response header and retained event records, so `/v1/log` can filter by the exact request that produced an encode/decode event
 - Hidden background-posture relaunch anchor now fires immediately when the widget is hidden with Clip Watch active, so the operator gets the promised click-to-return notification before any later hidden payload hit replaces it (calamum `20260531T220215Z-blindtag-widget`, full-suite confirmation `20260531T220238Z-blindtag-all`)

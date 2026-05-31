@@ -253,13 +253,21 @@ Read-only query surface for the retained BlindTag operation ledger.
 | `request_id` | Filter by the API request id emitted in `X-Request-Id` |
 | `operation` | Filter by operation name (`encode`, `decode`, `log_query`, `log_export`) |
 | `level` | Filter by severity (`debug`, `info`, `warning`, `error`, `critical`) |
+| `policy_mode` | Filter by retained policy posture (`operational`, `security`, `forensic`) |
+| `action_phase` | Filter by provenance handoff phase (`received`, `verified`, `exported`, `blocked`, `quarantined`, `unpacked`, `released`) |
 | `limit` | Maximum records returned |
 
 ### `POST /v1/log/export`
 
 Controlled export surface for retained evidence packets. The export root is always server-owned and path-contained under `.blindtag/generated/reporting/exports/`.
 
-When `BLINDTAG_EXPORT_SIGNING_KEY` is configured, export requests fail closed until a valid privileged request packet is supplied. When signing is absent, BlindTag reports that state in names-only form and still emits checksum-verifiable export artifacts.
+The request accepts `policy_mode` so callers can export `operational`, `security`, or `forensic` retained evidence.
+
+- `operational` mode preserves the Pass J baseline and may use the shared-key gate (`BLINDTAG_EXPORT_SIGNING_KEY`).
+- `security` / `forensic` mode use verifier-friendly Ed25519 request verification and detached artifact signing (`BLINDTAG_FORENSIC_SIGNING_*`).
+- Elevated export bundles include provenance summaries, chain verification, segment-seal summaries, and a sandbox-simulated handoff assessment packet that validates output content and final handoff-completion posture.
+
+When signing is absent for the requested mode, BlindTag fails closed for elevated exports and reports the missing trust material in names-only form.
 
 ### Payload size policy
 
@@ -350,6 +358,7 @@ pytest --cov=blindtag --cov-report=term-missing
 | `TestDecodeEndpoint`          | API round-trip, miss feedback, size limits             |
 | `TestReportingEndpoints`      | Retained API query/export coverage and trust gating    |
 | `TestRetainedExport`          | JSONL export family, checksums, and optional signing   |
+| `TestHighTrustProvenance`     | Elevated provenance modes, chain/seal verification, sandbox handoff posture |
 
 ---
 
@@ -358,16 +367,21 @@ pytest --cov=blindtag --cov-report=term-missing
 - **Localhost only.** The API server binds to `127.0.0.1` by default. Never expose it on `0.0.0.0` in untrusted network environments.
 - **Input sanitization.** The Pydantic validation layer rejects oversized and malformed payloads at the HTTP boundary before any codec code executes.
 - **Local-only retained reporting.** BlindTag may persist structured API operation records and export packets under `.blindtag/generated/reporting/`. This data never leaves the local machine unless the operator intentionally copies or publishes it.
+- **Elevated provenance modes.** BlindTag now supports `security` and `forensic` retained-evidence modes with provenance fields, deny-by-default executable handoff scope rules, tamper-evident record chaining, segment seals, and sandbox-simulated handoff assessment.
 - **Platform clipboard.** The clipboard watcher reads only from the local system clipboard (via Qt's native clipboard API). It does not transmit data over any network.
 
 ### Reporting validation evidence
 
-Pass J reporting implementation and adjacent reruns were validated under Calamum on 2026-05-31:
+Pass J baseline reporting and Pass R elevated provenance hardening were validated under Calamum on 2026-05-31:
 
 - `20260531T230143Z-blindtag-reporting`
 - `20260531T230200Z-blindtag-api`
 - `20260531T230620Z-blindtag-cli`
 - `20260531T230637Z-blindtag-all`
+- `20260531T233221Z-blindtag-forensic`
+- `20260531T233239Z-blindtag-reporting`
+- `20260531T233256Z-blindtag-api`
+- `20260531T233314Z-blindtag-all`
 
 ---
 

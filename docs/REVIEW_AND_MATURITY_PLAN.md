@@ -2077,6 +2077,307 @@ Final implementation judgment for Pass J:
 - **Governance status:** ALIGNED
 - **Closeout status:** READY
 
+### Pass R — Proposed: Logging/reporting security hardening and forensic mode
+
+**Proposal posture:** Pass J delivered a bounded operational reporting substrate. It is sufficient for local retained evidence, controlled export, and first-pass integrity verification. It is **not yet sufficient** as the security/reporting backbone for a downstream project that will transport and unpack executable payloads, where malappropriation, replay, tampering, and provenance disputes become first-class risks.
+
+This proposal defines the next bounded hardening lane needed before BlindTag's reporting substrate should be treated as top-tier security or forensic authority for executable-payload workflows.
+
+#### R.1 — Security gap analysis after Pass J
+
+Pass J left these deliberate gaps open:
+
+1. **Operational integrity exists, but tamper-evident ledger authority does not.**
+    - `operations.jsonl` is append-only by contract, but a later local edit can still rewrite history without a built-in record-chain proof.
+2. **Shared-key export auth is acceptable for local trust gates, but weak for independent forensic verification.**
+    - HMAC-based request and artifact verification is not the same as independently verifiable public-key signing with revocation and verifier separation.
+3. **Provenance depth is still thin.**
+    - Current records capture request correlation and operation outcome, but not a full chain-of-custody model for payload source, classification, unpack target, policy mode, or derived executable lineage.
+4. **No deny-by-default executable workflow policy exists yet.**
+    - Pass J does not define how reporting/security should behave when the protected subject is an executable payload or an unpacked executable artifact.
+5. **No forensic/export mode split exists yet.**
+    - Current `/v1/log` and `/v1/log/export` are bounded operational surfaces, not a top-tier incident-review or forensic review surface.
+6. **No quarantine / blocked-action evidence lane exists yet.**
+    - A high-risk workflow needs authoritative recording not only of successful actions, but also denied, quarantined, replayed, or policy-blocked actions.
+
+#### R.2 — Proposal judgment
+
+**Recommendation:** BlindTag should not rely on Pass J alone for downstream executable-payload transport/unpack projects.
+
+Before that next project uses BlindTag as a transport + unpack substrate, BlindTag should land a follow-on hardening lane with:
+
+- explicit policy modes,
+- richer provenance capture,
+- tamper-evident retained records,
+- deny-by-default executable handling,
+- stronger signature posture for shared verification,
+- and a dedicated Calamum adversarial validation contract.
+
+#### R.3 — Locked proposal recommendations
+
+1. **Introduce explicit top-level reporting/security modes.**
+    - Recommended family:
+      - `operational` — current Pass J-style local reporting posture.
+      - `security` — stricter signed-call, classification, and deny-by-default posture for sensitive payload workflows.
+      - `forensic` — security mode plus tamper-evident record chaining, deeper provenance, and incident-review export bundles.
+    - These modes should be explicit in requests/configuration and persisted into retained records. No ambient hidden fallback should silently escalate or de-escalate policy posture.
+2. **Treat executable transport/unpack as a deny-by-default policy class.**
+    - If a future project wants BlindTag-backed transport or unpack of executable payloads, that action class should require explicit signed authority and a scope that names the action family.
+    - Absent that authority, the action should be blocked, recorded, and exported as a names-only denied-action event.
+3. **Make provenance a first-class schema layer, not an optional note field.**
+    - Minimum proposed provenance fields for high-risk modes:
+      - `policy_mode`
+      - `subject_kind` (`text_payload`, `binary_payload`, `archive_payload`, `executable_payload`, `unpacked_executable`)
+      - `source_artifact_sha256`
+      - `derived_artifact_sha256` (nullable)
+      - `parent_event_id`
+      - `request_id`
+      - `requester_id`
+      - `key_id`
+      - `scope`
+      - `action_phase` (`received`, `verified`, `exported`, `blocked`, `quarantined`, `unpacked`, `released`)
+      - `tool_version`
+      - `session_id` / `host_context` (names-only)
+4. **Add tamper-evident retained ledger chaining.**
+    - Each retained record in `security` / `forensic` mode should carry a hash-chain link to the previous retained record in that ledger family.
+    - Segment sealing should produce a signed summary for bounded ledger slices so later export can prove continuity and omission resistance.
+5. **Prefer public-key artifact verification for shared forensic workflows.**
+    - Shared-key HMAC may remain a local-dev fallback.
+    - For top-tier security / forensic mode, the preferred posture should align with Calamum-style detached signature verification and names-only key reporting.
+    - Any new crypto dependency required for that posture remains an explicit approval gate under BlindTag dependency policy.
+6. **Split operational query from high-trust forensic export.**
+    - `GET /v1/log` should remain the low-friction operational read surface.
+    - High-trust forensic export should become a stricter surface with signed authority, richer bundle contents, and no ambiguity about review context.
+7. **Record blocked, replayed, expired, and tamper-detected attempts as first-class evidence.**
+    - For a security-grade reporting layer, denials are not noise; they are part of the authoritative incident narrative.
+
+#### R.4 — Recommended forensic mode semantics
+
+| Mode | Intended use | Trust posture | Evidence depth | Default executable policy |
+| --- | --- | --- | --- | --- |
+| `operational` | Local troubleshooting and ordinary API review | Current Pass J baseline | bounded event rows + export family | not an authority lane |
+| `security` | Sensitive payload handling and controlled downstream transport | signed authority for privileged actions, fail closed on ambiguity | richer provenance + denied-action evidence | deny by default unless explicitly authorized |
+| `forensic` | Incident review, disputed actions, chain-of-custody exports | strongest available signing + verifier-friendly artifact family | hash chain + provenance packet + segment seal + signed bundle | deny by default and preserve denied attempts as evidence |
+
+#### R.5 — Proposed implementation lanes
+
+##### Lane R-A — Policy mode and authority envelope
+
+Required planning direction:
+
+- define one stable `policy_mode` field for every trust-bearing event/export;
+- define scope families for sensitive actions such as transport, unpack, release, and forensic export;
+- define allowlist / key-id / freshness / expiry rules for those actions;
+- define the names-only operator-facing denial packet for unsupported or unauthorized executable workflows.
+
+##### Lane R-B — Provenance schema uplift
+
+Required planning direction:
+
+- add first-class provenance fields for source artifact digest, derived digest, parent lineage, requester identity, signing key id, scope, phase, and subject classification;
+- require these fields for `security` / `forensic` records even when some are null-by-contract;
+- distinguish the original BlindTag transport artifact from later unpacked/extracted executable artifacts.
+
+##### Lane R-C — Tamper-evident ledger and segment sealing
+
+Required planning direction:
+
+- chain high-trust records with `previous_record_hash` and `record_hash` fields;
+- introduce bounded sealed segments or checkpoints so later exports can prove continuity without requiring the entire ledger;
+- fail closed when continuity proofs or seal verification fail.
+
+##### Lane R-D — Forensic bundle export and quarantine evidence
+
+Required planning direction:
+
+- add a forensic bundle family that includes:
+  - filtered record payload,
+  - manifest,
+  - checksums,
+  - signature sidecars,
+  - provenance summary,
+  - chain/seal verification summary,
+  - denied/quarantined action summary where applicable;
+- keep bundle outputs path-contained and local-only by default;
+- define a quarantine-root contract for blocked or suspicious executable-related events.
+
+##### Lane R-E — Adversarial validation and Calamum security lane
+
+Required planning direction:
+
+- add a focused hardening lane (for example `blindtag-reporting-security` or `blindtag-forensic`) to the Calamum catalog;
+- add a sandbox-simulated elevated-provenance validation lane for `security` / `forensic` mode behavior;
+- require those sandbox tests to evaluate and validate generated program output content, not just command success or process survival;
+- require those sandbox tests to verify handoff-completion posture explicitly (complete, blocked, quarantined, incomplete) so the high-trust provenance path cannot clear on upgraded smoke tests alone;
+- validate representative adversarial cases:
+  - modified ledger row,
+  - broken hash chain,
+  - missing segment seal,
+  - expired signed request,
+  - unknown key id,
+  - replayed privileged request,
+  - unsupported executable action scope,
+  - unauthorized unpack attempt,
+  - path escape attempt,
+  - checksum/signature mismatch after export.
+
+#### R.6 — Calamum and Polymath alignment contract
+
+##### Calamum test alignment
+
+The hardening pass should preserve the existing BlindTag validation shape:
+
+1. focused hardening/security lane;
+2. adjacent API rerun for mode negotiation + deny behavior + provenance contracts;
+3. adjacent CLI rerun if operator-facing mode/export surfaces change;
+4. full `blindtag-all` gate;
+5. retained evidence verification gate for checksums, signatures, and forensic chain proof artifacts;
+6. sandbox-simulated elevated-provenance lane that validates output content and handoff-completion posture rather than merely proving that the process ran.
+
+##### Calamum security alignment
+
+The hardening pass should explicitly inherit these Calamum-style expectations:
+
+- names-only reporting of signing configuration and verification state;
+- fail-closed behavior on invalid, expired, replayed, revoked, or unverifiable trust material;
+- manifest/checksum/signature verification after write;
+- local-only generated evidence roots unless explicitly exported.
+
+##### Polymath alignment
+
+The hardening pass should preserve:
+
+- names-only evidence,
+- environment-based secret injection,
+- explicit authorization for sensitive state changes,
+- path containment,
+- calm human-facing security messages that explain what failed, why, what next, and where evidence lives.
+
+#### R.7 — Gaps that should be closed before executable-payload use
+
+Before BlindTag is reused by the next project for transport + unpack of executable payloads, ORACL recommends closing these gaps:
+
+1. **Move beyond operational-only event schema.**
+2. **Replace or supplement shared-key-only trust with verifier-friendly public-key signing for high-trust bundles.**
+3. **Add deny/quarantine evidence for executable actions.**
+4. **Add chain-of-custody provenance fields for derived artifacts.**
+5. **Add tamper-evident record chaining and segment sealing.**
+6. **Add adversarial Calamum coverage specifically for security / forensic paths.**
+
+#### R.8 — Acceptance criteria for the future hardening pass
+
+The hardening pass should not be considered complete until all of the following are true:
+
+1. `policy_mode` is explicit, persisted, and tested.
+2. Executable transport/unpack actions are deny-by-default unless explicitly authorized by signed scope.
+3. `security` / `forensic` records carry the required provenance fields.
+4. Tampering with retained records, chain links, seals, or exported artifacts is detected and fails closed.
+5. Forensic bundle exports are independently verifiable through manifest/checksum/signature materials.
+6. Human-facing security output stays names-only, calm, and actionable.
+7. Focused Calamum hardening lanes and `blindtag-all` both return `decision: go`.
+8. Sandbox-simulated `security` / `forensic` tests verify exported output content and the final handoff-completion posture, and they fail closed on mismatched or incomplete simulated handoff state.
+
+#### R.9 — Final proposal judgment
+
+This proposal is **aligned** with BlindTag local rules, Calamum evidence/security posture, and Polymath security expectations.
+
+It is also ORACL's recommendation that **Pass R (or an equivalent hardening lane) be treated as a prerequisite before BlindTag becomes the logging/reporting substrate for any downstream executable-payload transport/unpack project.**
+
+#### R.10 — Final implementation readiness and governance alignment assessment
+
+**Assessment date:** 2026-05-31  
+**Assessment scope:** readiness to execute Pass R exactly as bounded above; not a claim that the security / forensic hardening substrate is already implemented or validation-cleared.
+
+##### Verdict summary
+
+- **Implementation readiness:** **YES** — Pass R is sufficiently bounded, threat-anchored, and sequenced to execute without another broad planning pass.
+- **Governance alignment:** **YES** — the locked hardening direction aligns with BlindTag local instructions, Calamum evidence/security expectations, and the parent Polymath security/style guides.
+- **Closeout readiness:** **NO** — Pass R remains open until the hardened security / forensic substrate, adversarial validation lanes, and retained evidence verification all exist in shipped code.
+
+##### Why the implementation lane is ready
+
+1. **The threat driver is explicit and legitimate.**
+    - The pass is not speculative hardening for its own sake; it is directly tied to the stated downstream executable-payload transport/unpack risk.
+2. **The mode model is now bounded.**
+    - `operational`, `security`, and `forensic` provide a concrete posture ladder instead of an undefined "more secure later" promise.
+3. **The key hardening requirements are specific and testable.**
+    - deny-by-default executable handling,
+    - provenance uplift,
+    - tamper-evident chaining,
+    - stronger verifier-friendly signing,
+    - and dedicated adversarial Calamum coverage are all stated as concrete deliverables rather than general aspirations.
+4. **The validation contract is complete.**
+    - focused hardening lane -> adjacent reruns -> `blindtag-all` -> retained evidence verification is the same mature execution shape already used elsewhere in BlindTag.
+5. **The remaining approval boundary is explicit instead of hidden.**
+    - The proposal already records that any new crypto/runtime dependency required for verifier-friendly public-key signing remains an explicit operator approval gate under BlindTag dependency policy. That is an execution checkpoint, not uncontrolled scope drift.
+
+##### Governance alignment assessment
+
+| Governance surface | Verdict | Evidence basis |
+| --- | --- | --- |
+| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass R stays focused on reporting/security hardening, preserves API/codec stability expectations, and does not normalize broad architectural sprawl. |
+| BlindTag dependency policy | ALIGNED | The proposal prefers stronger verifier-friendly signing but explicitly preserves the operator approval gate for any new runtime crypto dependency. |
+| Pass J continuity / project precedent | ALIGNED | Pass R is framed as a follow-on hardening layer on top of the shipped Pass J substrate rather than a rewrite or repudiation of the retained-reporting baseline. |
+| Calamum validation discipline | ALIGNED | The proposal requires a dedicated hardening lane, adjacent reruns where needed, full `blindtag-all`, and retained artifact verification. |
+| Calamum security / evidence posture | ALIGNED | The proposal preserves names-only signing-state reporting, fail-closed trust handling, and manifest/checksum/signature verification after write. |
+| Polymath security expectations | ALIGNED | The proposal centers explicit authorization, names-only evidence, path containment, fail-closed ambiguity handling, and verifiable retained artifacts. |
+| Polymath user-facing expectations | ALIGNED | The proposed forensic/security outputs remain required to explain what failed, why, what happens next, and where the evidence lives without leaking secret material. |
+
+##### Remaining blockers to final signoff
+
+Pass R is ready to execute, but these remain intentional blockers to closure until the work actually lands:
+
+1. `security` / `forensic` policy modes do not yet exist in shipped BlindTag code.
+2. Executable transport/unpack deny-by-default scope enforcement is not yet implemented.
+3. Tamper-evident ledger chaining and segment sealing do not yet exist.
+4. Provenance-grade retained fields for derived executable artifacts do not yet exist.
+5. High-trust forensic export bundles and quarantine/denied-action evidence packets do not yet exist.
+6. Focused Calamum adversarial coverage for the hardening lane does not yet exist.
+7. Any stronger public-key verification path beyond the current shared-key posture remains unimplemented and, if it requires a new dependency, still operator-gated.
+8. No sandbox-simulated elevated-provenance test lane exists yet to validate output content and handoff-completion posture for the high-trust modes.
+
+##### Final judgment
+
+Pass R is **execution-ready and governance-aligned**.
+
+Pass R is **not** implementation-complete, validation-complete, or closeout-ready until the hardened security / forensic substrate lands in code, the adversarial Calamum lane passes, and the retained evidence family verifies under the stricter fail-closed trust rules defined above.
+
+#### R.11 — Implementation receipt and validation closeout
+
+**Execution date:** 2026-05-31
+
+Pass R is now **implemented and validation-complete**.
+
+Delivered surfaces:
+
+1. `blindtag/reporting.py` now ships explicit `operational`, `security`, and `forensic` modes with provenance-grade retained fields.
+2. Elevated provenance records now enforce deny-by-default executable scope rules, tamper-evident `previous_record_hash` / `record_hash` chaining, and per-segment seals under `.blindtag/generated/reporting/seals/`.
+3. High-trust export now supports verifier-friendly Ed25519 request verification and artifact signing for `security` / `forensic` bundles while preserving the existing shared-key operational export lane.
+4. Forensic export bundles now include provenance summaries, chain verification, segment-seal summaries, and sandbox-simulated handoff assessment packets that validate output content and final handoff-completion posture.
+5. `blindtag/api.py` now supports `policy_mode` / `action_phase` filters on reporting queries and export requests so the elevated provenance lane is reachable through the public localhost transport surface.
+6. `tests/test_reporting.py` and `tests/test_api.py` now cover elevated provenance modes, chain tamper detection, deny-by-default executable handling, and sandbox-simulated handoff verification.
+7. `catalog/test_definitions.json` now includes the dedicated `blindtag-forensic` Calamum lane.
+
+Validation evidence:
+
+- Focused sandbox / forensic gate: `20260531T233221Z-blindtag-forensic` — `decision: go`
+- Adjacent reporting gate: `20260531T233239Z-blindtag-reporting` — `decision: go`
+- Adjacent API gate: `20260531T233256Z-blindtag-api` — `decision: go`
+- Full project gate: `20260531T233314Z-blindtag-all` — `decision: go`
+
+Integrity posture observed in retained evidence:
+
+- Calamum emitted the expected report / manifest / checksums artifact family for each validation gate.
+- The dedicated sandbox-simulated lane verified elevated-mode output content and handoff-completion posture rather than relying on smoke-style process success alone.
+- The full gate passed after the hardened reporting/export substrate landed without reopening widget, CLI, or core-code regressions.
+
+Final implementation judgment for Pass R:
+
+- **Implementation status:** COMPLETE
+- **Validation status:** COMPLETE
+- **Governance status:** ALIGNED
+- **Closeout status:** READY
+
 ---
 
 ## Section 10 — Deferred: System Tray Background Process (`blindtag-tray`)
@@ -2132,7 +2433,10 @@ No secrets. No network. `HKCU` registry write is user-authorized opt-in only. Al
 | Pass O plan              | LOCKED — clipboard reliability and pressed-state truthfulness closure aligned to Calamum test/security and Polymath guides |
 | PyPI publish readiness   | PASS O BLOCKER CLEARED — widget publish blocker closed on 2026-05-31; any publish timing is now a separate operator/release decision |
 | Pass J plan              | COMPLETE — logging/reporting shipped and validated (`20260531T230143Z-blindtag-reporting`, `20260531T230637Z-blindtag-all`) |
+| Pass R proposal          | COMPLETE — elevated provenance hardening and sandbox-verified forensic lane shipped (`20260531T233221Z-blindtag-forensic`, `20260531T233314Z-blindtag-all`) |
 
 **Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass N (widget closure corrections) → Pass O (clipboard reliability + pressed-state truthfulness + live publish blocker closure) → Pass J (logging).
+
+**Follow-on security precondition:** Before BlindTag is reused as a transport/unpack substrate for executable payloads, land Pass R (or an equivalent hardening lane) so the reporting/security surface moves from operational integrity to chain-of-custody-grade security / forensic posture.
 
 Pass M is implementation-ready and bounded by the contracts in M.4–M.6.
