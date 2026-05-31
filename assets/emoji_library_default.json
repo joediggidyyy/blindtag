@@ -190,5 +190,13 @@
       "EYE"
     ],
     "label": "eye"
+  },
+  {
+    "emoji": "🥰",
+    "alias": ":smile hearts:",
+    "codes": [
+      ":smile hearts:"
+    ],
+    "label": "smiling with hearts"
   }
 ]

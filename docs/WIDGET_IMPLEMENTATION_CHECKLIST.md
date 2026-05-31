@@ -204,35 +204,35 @@ Create `tests/test_widget.py` with three test classes:
 
 ### `TestEmojiLibrary` (headless — no `qapp` fixture)
 
-| Test | Assert |
-|------|--------|
-| `test_load_default_library` | Load `assets/emoji_library_default.json`; len == 20 |
-| `test_schema_completeness` | Every entry has `emoji`, `alias`, `codes`, `label` |
-| `test_alias_in_codes` | `entry["alias"] in entry["codes"]` for every entry |
-| `test_all_codes_printable_ascii` | All codes match `^[ -~]+$` |
-| `test_add_and_remove_entry` | Add entry via `EmojiLibrary(tmp_path)`, remove it; file reflects change |
-| `test_set_active_alias` | Set alias to second code; JSON updated correctly |
-| `test_invalid_code_rejected` | `validate_codes(["bad\x80code"])` returns False |
-| `test_alias_not_in_codes_rejected` | `validate_entry` returns False when alias not in codes |
-| `test_malformed_json_returns_empty` | Write `{invalid}` to tmp JSON; `EmojiLibrary.load()` returns `[]` |
+| Test                                | Assert                                                                  |
+| ----------------------------------- | ----------------------------------------------------------------------- |
+| `test_load_default_library`         | Load `assets/emoji_library_default.json`; len == 20                     |
+| `test_schema_completeness`          | Every entry has `emoji`, `alias`, `codes`, `label`                      |
+| `test_alias_in_codes`               | `entry["alias"] in entry["codes"]` for every entry                      |
+| `test_all_codes_printable_ascii`    | All codes match `^[ -~]+$`                                              |
+| `test_add_and_remove_entry`         | Add entry via `EmojiLibrary(tmp_path)`, remove it; file reflects change |
+| `test_set_active_alias`             | Set alias to second code; JSON updated correctly                        |
+| `test_invalid_code_rejected`        | `validate_codes(["bad\x80code"])` returns False                         |
+| `test_alias_not_in_codes_rejected`  | `validate_entry` returns False when alias not in codes                  |
+| `test_malformed_json_returns_empty` | Write `{invalid}` to tmp JSON; `EmojiLibrary.load()` returns `[]`       |
 
 Note: `TestEmojiLibrary` uses `tmp_path` (pytest built-in) for write tests; it never writes to `assets/emoji_library_default.json`.
 
 ### `TestGuidancePanel` (uses `qapp` fixture)
 
-| Test | Assert |
-|------|--------|
-| `test_panel_instantiates` | `_GuidancePanel` constructs without error |
-| `test_card_count` | 5 cards present (one per schema entry) |
+| Test                       | Assert                                                  |
+| -------------------------- | ------------------------------------------------------- |
+| `test_panel_instantiates`  | `_GuidancePanel` constructs without error               |
+| `test_card_count`          | 5 cards present (one per schema entry)                  |
 | `test_card_text_not_empty` | No card has an empty header or empty expanded body text |
 
 ### `TestEmojiFlyout` (uses `qapp` fixture)
 
-| Test | Assert |
-|------|--------|
-| `test_flyout_instantiates` | `_EmojiFlyout` constructs with a populated library |
-| `test_cell_count_matches_library` | Grid cell count == library entry count |
-| `test_click_appends_alias` | Clicking cell 0 appends `library[0]["alias"]` to a mock payload field |
+| Test                              | Assert                                                                |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `test_flyout_instantiates`        | `_EmojiFlyout` constructs with a populated library                    |
+| `test_cell_count_matches_library` | Grid cell count == library entry count                                |
+| `test_click_appends_alias`        | Clicking cell 0 appends `library[0]["alias"]` to a mock payload field |
 
 ---
 
@@ -283,32 +283,32 @@ git -C "c:\Users\joedi\Documents\CodeSentinel-1" commit -m "submodule: advance b
 
 Planned items from [docs/REVIEW_AND_MATURITY_PLAN.md](REVIEW_AND_MATURITY_PLAN.md):
 
-| Item | Spec |
-|------|------|
-| `X-Request-Id` response header | Add middleware to `blindtag/api.py`; generate UUID4 per request; include in all responses |
-| `X-Content-Type-Options: nosniff` | Add as static response header middleware |
-| `X-Frame-Options: DENY` | Add as static response header middleware |
-| API test coverage for headers | Add `TestSecurityHeaders` class to `tests/test_api.py` |
-| Update `blindtag-api` catalog summary | Reference new test class |
+| Item                                  | Spec                                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `X-Request-Id` response header        | Add middleware to `blindtag/api.py`; generate UUID4 per request; include in all responses |
+| `X-Content-Type-Options: nosniff`     | Add as static response header middleware                                                  |
+| `X-Frame-Options: DENY`               | Add as static response header middleware                                                  |
+| API test coverage for headers         | Add `TestSecurityHeaders` class to `tests/test_api.py`                                    |
+| Update `blindtag-api` catalog summary | Reference new test class                                                                  |
 
 ### Pass F — Code quality
 
-| Item | Spec |
-|------|------|
+| Item                                                  | Spec                                                                                                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `test_only_tag_cancel_yields_none_or_empty` ambiguity | Change `assert result is None or result == ""` to `assert result is None` — TAG_CANCEL with no payload chars is unambiguously `None` |
-| `Optional` import from `typing` in `core.py` | Replace with `str \| None` union type (Python 3.10+ style) |
-| `__all__` export list in `core.py` | Add to lock the public surface |
-| `pyproject.toml` metadata | Add project authors, `project.urls` classifier entries, trove classifiers |
+| `Optional` import from `typing` in `core.py`          | Replace with `str \| None` union type (Python 3.10+ style)                                                                           |
+| `__all__` export list in `core.py`                    | Add to lock the public surface                                                                                                       |
+| `pyproject.toml` metadata                             | Add project authors, `project.urls` classifier entries, trove classifiers                                                            |
 
 ---
 
 ## Security alignment record
 
-| Polymath invariant | Alignment |
-|-------------------|-----------|
-| No secrets in source control | Satisfied — `assets/emoji_library_default.json` is non-secret data |
-| Path containment | Enforced — library load/save uses `Path(__file__)`-relative resolution; no user-supplied path escapes the assets dir |
-| Fail closed on malformed input | Enforced — malformed JSON → empty library + status bar warning; no crash |
-| Retained evidence verifiable | Calamum `report_json` evidence requirement on all definitions; run IDs recorded in checklist |
-| No modal dialogs for validation errors | Enforced — red border only; no modal or dialog on invalid code input |
-| Signed evidence | Noted gap — `signed-evidence` policy flag not yet added to release-gate catalog entries; accepted at current maturity level; revisit when calamum signing integration is ready for this project |
+| Polymath invariant                     | Alignment                                                                                                                                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No secrets in source control           | Satisfied — `assets/emoji_library_default.json` is non-secret data                                                                                                                              |
+| Path containment                       | Enforced — library load/save uses `Path(__file__)`-relative resolution; no user-supplied path escapes the assets dir                                                                            |
+| Fail closed on malformed input         | Enforced — malformed JSON → empty library + status bar warning; no crash                                                                                                                        |
+| Retained evidence verifiable           | Calamum `report_json` evidence requirement on all definitions; run IDs recorded in checklist                                                                                                    |
+| No modal dialogs for validation errors | Enforced — red border only; no modal or dialog on invalid code input                                                                                                                            |
+| Signed evidence                        | Noted gap — `signed-evidence` policy flag not yet added to release-gate catalog entries; accepted at current maturity level; revisit when calamum signing integration is ready for this project |

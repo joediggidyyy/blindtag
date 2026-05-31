@@ -29,7 +29,7 @@ Panel Layout
   │  [HIDDEN PAYLOAD textbox]  (encode only) │
   │  [OUTPUT textbox]                        │
   │                                          │
-    │  [ Encode & Copy ]                      │  ← single action row
+    │  [ Encode ]                             │  ← single action row
     │  [ Clear All ]                          │
   ├──────────────────────────────────────────┤
   │ Status message                        ●  │  ← status bar
@@ -407,18 +407,18 @@ _CARD_CONTENT: list[tuple[str, str]] = [
         "Hidden payload",
         "The secret message to embed. Must be printable characters "
         "(letters, numbers, punctuation, spaces). Max ~9,000 characters. "
-        "When you pick an emoji from the selector, its alias (e.g. :smile:) "
-        "is automatically appended here alongside the glyph in the anchor text.",
+        "Enter the hidden message here. The anchor box above can hold a U+XXXX "
+        "code token that resolves to the visible glyph at encode time.",
     ),
     (
         "Emoji aliases",
-        "The emoji selector inserts the raw glyph into your anchor text. "
+        "The emoji selector inserts the Unicode codepoint token into your anchor text. "
         "Box 1 is format-agnostic: you can also type a U+XXXX codepoint or "
         "a :alias: code and it will be resolved automatically at encode time. "
         "Edit the library to add your own glyphs.",
     ),
     (
-        "Encode & Copy",
+        "Encode",
         "Runs encode and immediately copies the result to your clipboard. "
         "The output looks identical to your anchor text — the payload is invisible.",
     ),
@@ -1020,12 +1020,12 @@ class BlindTagWindow(QMainWindow):
         ar = QHBoxLayout(anchor_row)
         ar.setContentsMargins(0, 0, 0, 0)
         ar.setSpacing(4)
-        ar.addWidget(self._section_label("ANCHOR TEXT  \u00b7  visible cover"), stretch=1)
-        self._btn_emoji = QPushButton("\u263a")
-        self._btn_emoji.setFixedSize(26, 26)
-        self._btn_emoji.setStyleSheet(_btn_ghost_style())
-        self._btn_emoji.clicked.connect(self._open_emoji_flyout)
-        ar.addWidget(self._btn_emoji)
+        ar.addWidget(self._section_label("ANCHOR TEXT  \u00b7  visible cover"), stretch=1)        
+        self._btn_emoji = QPushButton("\u263a")        
+        self._btn_emoji.setFixedSize(26, 26)        
+        self._btn_emoji.setStyleSheet(_btn_ghost_style())        
+        self._btn_emoji.clicked.connect(self._open_emoji_flyout)        
+        ar.addWidget(self._btn_emoji)        
         layout.addWidget(anchor_row)
         self._anchor_input = self._make_textbox(82)
         layout.addWidget(self._anchor_input)
@@ -1044,7 +1044,7 @@ class BlindTagWindow(QMainWindow):
         row_layout.setContentsMargins(0, 4, 0, 4)
         row_layout.setSpacing(6)
 
-        btn_obf = QPushButton("Encode & Copy")
+        btn_obf = QPushButton("Encode")
         btn_obf.setStyleSheet(_btn_primary_style())
         btn_obf.setFixedHeight(36)
         btn_obf.clicked.connect(self._encode_and_copy)
@@ -1221,9 +1221,9 @@ class BlindTagWindow(QMainWindow):
         self._emoji_flyout.raise_()
 
     def _insert_emoji(self, emoji: str) -> None:
-        """Single-field insert: place raw glyph into anchor input only."""
+        """Single-field insert: place Unicode code tokens into anchor input only."""
         cur = self._anchor_input.textCursor()
-        cur.insertText(emoji)
+        cur.insertText(_format_codepoints(emoji))
         self._anchor_input.setTextCursor(cur)
 
     def _open_library_editor(self) -> None:

@@ -71,11 +71,11 @@ Meeting notes from Monday sync.
 ```
 
 **Exit codes**
-| Code | Meaning |
-|---|---|
-| 0 | Success |
-| 1 | `InvalidPayloadError` — payload contains non-printable-ASCII characters |
-| 2 | Usage error |
+| Code | Meaning                                                                 |
+| ---- | ----------------------------------------------------------------------- |
+| 0    | Success                                                                 |
+| 1    | `InvalidPayloadError` — payload contains non-printable-ASCII characters |
+| 2    | Usage error                                                             |
 
 ---
 
@@ -103,11 +103,11 @@ CONFIDENTIAL:REF-7821
 ```
 
 **Exit codes**
-| Code | Meaning |
-|---|---|
-| 0 | Success (payload found OR cleanly absent) |
-| 1 | `InvalidPayloadError` — malformed Plane 14 sequence |
-| 2 | Usage error |
+| Code | Meaning                                             |
+| ---- | --------------------------------------------------- |
+| 0    | Success (payload found OR cleanly absent)           |
+| 1    | `InvalidPayloadError` — malformed Plane 14 sequence |
+| 2    | Usage error                                         |
 
 ---
 
@@ -123,10 +123,10 @@ xclip -o | blindtag strip -
 ```
 
 **Exit codes**
-| Code | Meaning |
-|---|---|
-| 0 | Success |
-| 2 | Usage error |
+| Code | Meaning     |
+| ---- | ----------- |
+| 0    | Success     |
+| 2    | Usage error |
 
 ---
 
@@ -145,11 +145,30 @@ blindtag api --host 0.0.0.0         # expose to LAN (use with caution)
 No sub-subcommands; there is only one API operation (serve). Nesting a `serve` token would be unnecessary ceremony.
 
 **Exit codes**
-| Code | Meaning |
-|---|---|
-| 0 | Clean shutdown |
-| 1 | Startup failure (port in use, import error, etc.) |
-| 2 | Usage error |
+| Code | Meaning                                           |
+| ---- | ------------------------------------------------- |
+| 0    | Clean shutdown                                    |
+| 1    | Startup failure (port in use, import error, etc.) |
+| 2    | Usage error                                       |
+
+---
+
+### `blindtag widget`
+
+Launch the desktop observer widget from the root CLI without permanently occupying the calling terminal.
+
+```bash
+blindtag widget
+```
+
+No flags. In installed environments this compatibility launcher should hand off to the dedicated `blindtag-widget` GUI surface and return control to the CLI promptly. In source-tree fallback scenarios where the dedicated launcher is unavailable, it may import the widget directly.
+
+**Exit codes**
+| Code | Meaning                           |
+| ---- | --------------------------------- |
+| 0    | Widget handoff / launch succeeded |
+| 1    | Import / launch error             |
+| 2    | Usage error                       |
 
 ---
 
@@ -161,14 +180,14 @@ Launch the desktop observer widget through the dedicated terminal-free GUI surfa
 blindtag-widget
 ```
 
-No flags; the widget is self-contained. The root `blindtag` CLI does **not** expose a `widget` subcommand anymore because widget launch is required to remain terminal-free.
+No flags; the widget is self-contained. This remains the dedicated GUI launcher surface, while `blindtag widget` is the compatibility root-CLI handoff.
 
 **Exit codes**
-| Code | Meaning |
-|---|---|
-| 0 | Clean close |
-| 1 | Import / display error |
-| 2 | Unsupported arguments passed to `blindtag-widget` |
+| Code | Meaning                                           |
+| ---- | ------------------------------------------------- |
+| 0    | Clean close                                       |
+| 1    | Import / display error                            |
+| 2    | Unsupported arguments passed to `blindtag-widget` |
 
 ---
 
@@ -183,7 +202,7 @@ blindtag-api    = "blindtag.cli:_api_shim"     # compat alias → delegates to c
 blindtag-widget = "blindtag.cli:_widget_shim"  # dedicated terminal-free widget surface
 ```
 
-`_api_shim` delegates into the root CLI. `_widget_shim` is intentionally separate and launches the widget directly so the supported widget surface remains terminal-free.
+`_api_shim` delegates into the root CLI. `_widget_shim` is intentionally separate and launches the widget directly so the dedicated GUI surface remains terminal-free. The root `widget` subcommand should hand off to that GUI surface out-of-process where available rather than removing the CLI launchpoint.
 
 ---
 
@@ -232,11 +251,11 @@ def _configure_logging(level_name: str) -> None:
 
 ## Stale surfaces to fix when implementing
 
-| File | Issue |
-|---|---|
-| `run_widget.py` | Docstring still references `customtkinter`, `pyperclip`, Linux `xclip` (obsolete after PySide6 rewrite) |
-| `blindtag/__init__.py` | Module docstring describes widget as "(customtkinter)" |
-| `README.md` Security Notes | Fixed — now references Qt native clipboard API |
+| File                       | Issue                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `run_widget.py`            | Docstring still references `customtkinter`, `pyperclip`, Linux `xclip` (obsolete after PySide6 rewrite) |
+| `blindtag/__init__.py`     | Module docstring describes widget as "(customtkinter)"                                                  |
+| `README.md` Security Notes | Fixed — now references Qt native clipboard API                                                          |
 
 These can be corrected in the same pass as CLI scaffolding.
 

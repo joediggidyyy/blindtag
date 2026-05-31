@@ -72,13 +72,13 @@ Each card is a `QWidget` with:
 
 ### Card content
 
-| Card | Caret | Expanded guidance |
-|------|-------|-------------------|
-| **Anchor text** | ✓ | The visible text your payload will be hidden inside. Any readable string works. The receiver sees only this text unless they decode it. |
-| **Hidden payload** | ✓ | Your secret message — plain text only (letters, numbers, punctuation, spaces). Max ~9,000 characters. Nothing from the emoji selector goes here; this field is exclusively for the message you want to hide. |
-| **Emoji format** | ✓ | The anchor text field accepts any emoji representation — raw glyph (🗑️), Unicode notation (`U+1F5D1`), or alias code (`:trash:`). All are valid cover text. At encode time the widget resolves any tokens to actual glyph characters before embedding the payload. No input is rejected. |
-| **Obfuscate & Copy** | ✓ | Runs encode and immediately copies the result to your clipboard. The output looks identical to your anchor text — the payload is invisible. |
-| **Clip Watch** | ✓ | Monitors your clipboard. When you copy text that contains a hidden payload, BlindTag automatically detects and shows it. No data leaves your machine. |
+| Card                 | Caret | Expanded guidance                                                                                                                                                                                                                                                                       |
+| -------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Anchor text**      | ✓     | The visible text your payload will be hidden inside. Any readable string works. The receiver sees only this text unless they decode it.                                                                                                                                                 |
+| **Hidden payload**   | ✓     | Your secret message — plain text only (letters, numbers, punctuation, spaces). Max ~9,000 characters. Nothing from the emoji selector goes here; this field is exclusively for the message you want to hide.                                                                            |
+| **Emoji format**     | ✓     | The anchor text field accepts any emoji representation — raw glyph (🗑️), Unicode notation (`U+1F5D1`), or alias code (`:trash:`). All are valid cover text. At encode time the widget resolves any tokens to actual glyph characters before embedding the payload. No input is rejected. |
+| **Obfuscate & Copy** | ✓     | Runs encode and immediately copies the result to your clipboard. The output looks identical to your anchor text — the payload is invisible.                                                                                                                                             |
+| **Clip Watch**       | ✓     | Monitors your clipboard. When you copy text that contains a hidden payload, BlindTag automatically detects and shows it. No data leaves your machine.                                                                                                                                   |
 
 ---
 
@@ -190,12 +190,12 @@ A fourth panel added to `_stack` (after encode, decode). The toggle strip `[Enco
 
 **Per-row columns:**
 
-| Column | Content |
-|--------|--------|
-| Glyph | Emoji rendered at `18pt`; non-editable. |
+| Column       | Content                                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Glyph        | Emoji rendered at `18pt`; non-editable.                                                                          |
 | Active alias | The `alias` value for this entry (e.g. `:trash:`). Shown in `C_MUTED` at `9pt`. Tooltip shows full `codes` list. |
-| Label | `C_MUTED` display label |
-| Delete `✕` | Removes the entire entry; no confirmation dialog |
+| Label        | `C_MUTED` display label                                                                                          |
+| Delete `✕`   | Removes the entire entry; no confirmation dialog                                                                 |
 
 **Add entry form** (bottom, inline — emoji picker icon · label field · Add button):
 
@@ -246,12 +246,12 @@ A fourth panel added to `_stack` (after encode, decode). The toggle strip `[Enco
 
 ### Schema fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `emoji` | string | Unicode emoji glyph; display only |
-| `alias` | string | The active alias code for this emoji (e.g. `:trash:`); must be a member of `codes` |
+| Field   | Type     | Description                                                                                    |
+| ------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `emoji` | string   | Unicode emoji glyph; display only                                                              |
+| `alias` | string   | The active alias code for this emoji (e.g. `:trash:`); must be a member of `codes`             |
 | `codes` | string[] | Full pick list of available codes for this emoji; each must match `^[ -~]+$` (printable ASCII) |
-| `label` | string | Human-readable name; shown in editor only, never encoded |
+| `label` | string   | Human-readable name; shown in editor only, never encoded                                       |
 
 ### Load behavior
 
@@ -269,15 +269,15 @@ Blindtag uses a declarative field-spec pattern for input handling, consistent wi
 
 ### Box1 — ANCHOR TEXT (`_anchor_input`)
 
-| Attribute | Value |
-|-----------|-------|
-| `key` | `anchor_text` |
-| `value_kind` | `cover-text` |
-| `required` | No — empty anchor is valid cover text |
-| `max_length` | None — no cap enforced |
-| `choices` | None — any input is accepted |
-| `reject_policy` | `never` — no input string is rejected |
-| `description` | Visible cover text. Accepts raw glyphs, `U+XXXX` codepoint notation, `:alias:` codes, or plain text. All forms resolve at encode time. |
+| Attribute       | Value                                                                                                                                  |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`           | `anchor_text`                                                                                                                          |
+| `value_kind`    | `cover-text`                                                                                                                           |
+| `required`      | No — empty anchor is valid cover text                                                                                                  |
+| `max_length`    | None — no cap enforced                                                                                                                 |
+| `choices`       | None — any input is accepted                                                                                                           |
+| `reject_policy` | `never` — no input string is rejected                                                                                                  |
+| `description`   | Visible cover text. Accepts raw glyphs, `U+XXXX` codepoint notation, `:alias:` codes, or plain text. All forms resolve at encode time. |
 
 **Auto-detection order** (applied by the encode resolution pipeline, not at input time):
 
@@ -300,11 +300,11 @@ At encode time, `core.encode()` raises `InvalidPayloadError` for characters outs
 
 The editor add form writes structured data to `emoji_library_default.json` and requires field-level validation:
 
-| Field | `value_kind` | Constraint | Reject on |
-|-------|-------------|------------|----------|
-| `emoji` (glyph input) | `glyph` | At least one codepoint outside printable ASCII range (U+0020–U+007E); 1–2 grapheme clusters | Input contains only printable ASCII → glyph detection fails; red border shown |
-| `label` | `text` | Non-empty; max 60 chars | Empty → Add button remains disabled |
-| `alias` / `code` | `ascii-code` | Matches `^[ -~]+$` (printable ASCII 0x20–0x7E); max 30 chars | Non-matching chars → red border; no modal |
+| Field                 | `value_kind` | Constraint                                                                                  | Reject on                                                                     |
+| --------------------- | ------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `emoji` (glyph input) | `glyph`      | At least one codepoint outside printable ASCII range (U+0020–U+007E); 1–2 grapheme clusters | Input contains only printable ASCII → glyph detection fails; red border shown |
+| `label`               | `text`       | Non-empty; max 60 chars                                                                     | Empty → Add button remains disabled                                           |
+| `alias` / `code`      | `ascii-code` | Matches `^[ -~]+$` (printable ASCII 0x20–0x7E); max 30 chars                                | Non-matching chars → red border; no modal                                     |
 
 Validation is synchronous and inline — red border on the failing field, no dialog or modal. The `Add` button is disabled until `emoji` (or resolvable code) and `label` are both non-empty and valid.
 
@@ -330,10 +330,10 @@ The `?` button is inserted after the title label, before `addStretch()`. It is `
 
 ## New module / file inventory
 
-| Artifact | Type | Notes |
-|----------|------|-------|
-| `assets/emoji_library_default.json` | Data | Tracked, versioned. Ships pre-populated with 20 entries including `codes` arrays. Single working library — in-app edits write directly to this file. |
-| `blindtag/widget.py` | Modified | `_GuidancePanel`, `_EmojiCard`, `_EmojiFlyout`, `_LibraryEditorPanel` classes; `?` button in `_TitleBar`; emoji trigger in `_build_encode_panel()` |
+| Artifact                            | Type     | Notes                                                                                                                                                |
+| ----------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assets/emoji_library_default.json` | Data     | Tracked, versioned. Ships pre-populated with 20 entries including `codes` arrays. Single working library — in-app edits write directly to this file. |
+| `blindtag/widget.py`                | Modified | `_GuidancePanel`, `_EmojiCard`, `_EmojiFlyout`, `_LibraryEditorPanel` classes; `?` button in `_TitleBar`; emoji trigger in `_build_encode_panel()`   |
 
 No new Python modules. All new UI classes live in `widget.py`.
 
@@ -341,11 +341,11 @@ No new Python modules. All new UI classes live in `widget.py`.
 
 ## Calamum / test surface
 
-| Test class | Scope |
-|------------|-------|
-| `TestEmojiLibrary` (in `tests/test_widget.py`) | Load `emoji_library_default.json`; verify schema (all entries have `emoji`, `alias`, `codes`, `label`); `alias` is member of `codes`; all codes pass ASCII validation; add/remove entry; add/remove code; set active alias |
-| `TestGuidancePanel` (in `tests/test_widget.py`) | Panel opens/closes, card count matches schema, card text not empty |
-| `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking a cell inserts the raw emoji glyph into `_anchor_input` only (`test_click_inserts_glyph`); `_hidden_input` is not modified |
+| Test class                                         | Scope                                                                                                                                                                                                                                           |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TestEmojiLibrary` (in `tests/test_widget.py`)     | Load `emoji_library_default.json`; verify schema (all entries have `emoji`, `alias`, `codes`, `label`); `alias` is member of `codes`; all codes pass ASCII validation; add/remove entry; add/remove code; set active alias                      |
+| `TestGuidancePanel` (in `tests/test_widget.py`)    | Panel opens/closes, card count matches schema, card text not empty                                                                                                                                                                              |
+| `TestEmojiFlyout` (in `tests/test_widget.py`)      | Flyout cell count matches library length; clicking a cell inserts the raw emoji glyph into `_anchor_input` only (`test_click_inserts_glyph`); `_hidden_input` is not modified                                                                   |
 | `TestEncodeResolution` (in `tests/test_widget.py`) | Headless; no QApplication needed. Covers: `U+1F600` resolves to `😀`; `:smile:` resolves to `😀`; plain text passes through unchanged; invalid codepoint `U+110000` passes through unchanged; unknown alias `:notacode:` passes through unchanged |
 
 These are part of the `tests/test_widget.py` work already in Planned. The emoji/guidance implementation should ship as part of the same pass that delivers `test_widget.py`.

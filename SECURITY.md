@@ -5,7 +5,7 @@ BlindTag is maintained by [Polymath](https://polymath-global.com).
 ## Supported versions
 
 | Version | Supported |
-|---------|-----------|
+| ------- | --------- |
 | 1.x     | Yes       |
 
 ## Reporting a vulnerability

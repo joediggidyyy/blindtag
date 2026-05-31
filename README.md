@@ -43,12 +43,12 @@ Encode:  ord(ascii_char)    + 0xE0000  →  Plane 14 tag codepoint
 Decode:  plane14_codepoint  - 0xE0000  →  ord(ascii_char)
 ```
 
-| ASCII character | Codepoint | Plane 14 tag     |
-|-----------------|-----------|------------------|
-| `A`             | U+0041    | U+E0041          |
-| `z`             | U+007A    | U+E007A          |
-| `!`             | U+0021    | U+E0021          |
-| `~` (max)       | U+007E    | U+E007E          |
+| ASCII character | Codepoint | Plane 14 tag |
+| --------------- | --------- | ------------ |
+| `A`             | U+0041    | U+E0041      |
+| `z`             | U+007A    | U+E007A      |
+| `!`             | U+0021    | U+E0021      |
+| `~` (max)       | U+007E    | U+E007E      |
 
 **Payload framing:** Every payload is terminated by **U+E007F (TAG CANCEL)** — the only Plane 14 character outside the printable ASCII mirror. The decoder uses it as an unambiguous end-of-stream sentinel.
 
@@ -134,15 +134,15 @@ except InvalidPayloadError as exc:
 
 ## Module A — Core Engine (`blindtag/core.py`)
 
-| Symbol | Type | Description |
-|---|---|---|
-| `PLANE14_OFFSET` | `int` | `0xE0000` — bitwise shift constant |
-| `TAG_CANCEL` | `str` | `"\U000E007F"` — payload terminator |
-| `ASCII_MIN` | `int` | `0x20` — lower payload boundary |
-| `ASCII_MAX` | `int` | `0x7E` — upper payload boundary |
-| `encode(anchor, hidden_message)` | `str` | Embed payload into cover text |
-| `decode(raw_text)` | `str \| None` | Extract payload; `None` if absent |
-| `strip_plane14(text)` | `str` | Remove all tag characters |
+| Symbol                           | Type          | Description                         |
+| -------------------------------- | ------------- | ----------------------------------- |
+| `PLANE14_OFFSET`                 | `int`         | `0xE0000` — bitwise shift constant  |
+| `TAG_CANCEL`                     | `str`         | `"\U000E007F"` — payload terminator |
+| `ASCII_MIN`                      | `int`         | `0x20` — lower payload boundary     |
+| `ASCII_MAX`                      | `int`         | `0x7E` — upper payload boundary     |
+| `encode(anchor, hidden_message)` | `str`         | Embed payload into cover text       |
+| `decode(raw_text)`               | `str \| None` | Extract payload; `None` if absent   |
+| `strip_plane14(text)`            | `str`         | Remove all tag characters           |
 
 ### Payload character set
 
@@ -242,11 +242,11 @@ Interactive docs: **http://127.0.0.1:8000/docs**
 
 ### Payload size policy
 
-| Field | Maximum |
-|---|---|
-| `anchor` | 10 000 chars |
-| `hidden_message` | 1 000 chars |
-| `raw_text` | 50 000 chars |
+| Field            | Maximum      |
+| ---------------- | ------------ |
+| `anchor`         | 10 000 chars |
+| `hidden_message` | 1 000 chars  |
+| `raw_text`       | 50 000 chars |
 
 Requests exceeding these limits receive **HTTP 422** before any codec logic runs.
 
@@ -260,21 +260,21 @@ blindtag-widget
 
 ### Launch surfaces
 
-| Surface | Intended use | Terminal behavior |
-|---|---|---|
-| `blindtag-widget` / `blindtag-widget.exe` | Required widget launch surface | **No terminal** — this is the required widget behavior |
-| `blindtag widget` | Retired CLI-routed widget path | **No longer supported** — the duplicate terminal-attached widget route has been removed from the root CLI |
-| `python run_widget.py` | Direct source-tree developer launch | **Currently keeps a terminal attached** — useful only for development/debug, not acceptable as final widget UX |
+| Surface                                   | Intended use                        | Terminal behavior                                                                                              |
+| ----------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `blindtag-widget` / `blindtag-widget.exe` | Required widget launch surface      | **No terminal** — this is the required widget behavior                                                         |
+| `blindtag widget`                         | Supported CLI compatibility launcher | Hands off to the dedicated widget surface and should return the calling CLI promptly in installed environments |
+| `python run_widget.py`                    | Direct source-tree developer launch | **Currently keeps a terminal attached** — useful only for development/debug, not acceptable as final widget UX |
 
 ### Hotkeys
 
-| Shortcut | Action |
-|---|---|
-| `Ctrl+E` | Switch to Encode panel |
-| `Ctrl+D` | Switch to Decode panel |
-| `Ctrl+W` | Toggle Clipboard Watcher |
+| Shortcut      | Action                              |
+| ------------- | ----------------------------------- |
+| `Ctrl+E`      | Switch to Encode panel              |
+| `Ctrl+D`      | Switch to Decode panel              |
+| `Ctrl+W`      | Toggle Clipboard Watcher            |
 | `Ctrl+Return` | Execute active panel primary action |
-| `Escape` | Close widget |
+| `Escape`      | Close widget                        |
 
 ### Clipboard Watcher
 
@@ -287,7 +287,7 @@ When enabled, BlindTag listens to Qt clipboard change events on the GUI thread. 
 
 No data leaves the local machine. Clipboard detection stays inside the Qt event loop and shuts down with the widget.
 
-**Current note (2026-05-31):** the hidden-notification concept is implemented and covered by focused widget tests, but live operator evidence still shows an unresolved delivery gap in the hidden workflow pending live re-verification. Terminal-free widget launch is a non-negotiable requirement. `blindtag-widget.exe` is the required launch surface, and the duplicate CLI widget route has been retired from the supported root CLI.
+**Current note (2026-05-31):** the hidden-notification concept is implemented and covered by focused widget tests, but live operator evidence still shows an unresolved delivery gap in the hidden workflow pending live re-verification. Terminal-free widget launch is a non-negotiable requirement. `blindtag-widget.exe` remains the normal installed widget surface, and `blindtag widget` is restored as a supported compatibility launcher that should hand off to the same widget surface rather than staying attached to the CLI.
 
 ---
 
@@ -313,20 +313,20 @@ pytest --cov=blindtag --cov-report=term-missing
 
 ### Test coverage map
 
-| Class | Requirement |
-|---|---|
-| `TestRoundTrip` | Encode→decode fidelity across payload types |
-| `TestAnchorModification` | Payload integrity through whitespace/newline mutations |
-| `TestAnchorEdgeCases` | Multi-byte emoji, CJK, RTL, alphanumeric anchors |
-| `TestValidationBoundaries` | `InvalidPayloadError` for every out-of-range char |
-| `TestDecodeNoPayload` | `None` return on clean strings |
-| `TestCrashImmunity` | No exceptions on arbitrary / corrupted Plane 14 input |
-| `TestNormalizationResistance` | NFC / NFD / NFKC / NFKD payload preservation |
-| `TestTagCancelSemantics` | Hard stop at U+E007F; second payload ignored |
-| `TestStripPlane14` | Sanitization utility correctness |
-| `TestLongPayloads` | 128-char and 512-char payload integrity |
-| `TestEncodeEndpoint` | API schema, validation, error codes |
-| `TestDecodeEndpoint` | API round-trip, miss feedback, size limits |
+| Class                         | Requirement                                            |
+| ----------------------------- | ------------------------------------------------------ |
+| `TestRoundTrip`               | Encode→decode fidelity across payload types            |
+| `TestAnchorModification`      | Payload integrity through whitespace/newline mutations |
+| `TestAnchorEdgeCases`         | Multi-byte emoji, CJK, RTL, alphanumeric anchors       |
+| `TestValidationBoundaries`    | `InvalidPayloadError` for every out-of-range char      |
+| `TestDecodeNoPayload`         | `None` return on clean strings                         |
+| `TestCrashImmunity`           | No exceptions on arbitrary / corrupted Plane 14 input  |
+| `TestNormalizationResistance` | NFC / NFD / NFKC / NFKD payload preservation           |
+| `TestTagCancelSemantics`      | Hard stop at U+E007F; second payload ignored           |
+| `TestStripPlane14`            | Sanitization utility correctness                       |
+| `TestLongPayloads`            | 128-char and 512-char payload integrity                |
+| `TestEncodeEndpoint`          | API schema, validation, error codes                    |
+| `TestDecodeEndpoint`          | API round-trip, miss feedback, size limits             |
 
 ---
 

@@ -28,13 +28,13 @@
 - Current package config: `pyproject.toml` defines `blindtag` under `[project.scripts]` and `blindtag-widget` under `[project.gui-scripts]`
 
 **Verified interpretation:**
-- `blindtag widget` was the CLI subcommand routed through `blindtag.exe`; that duplicate route is now retired from the supported root CLI surface.
-- `blindtag-widget.exe` remains the GUI-script handoff surface and the only compliant terminal-free widget launch path.
-- The requirement itself is broader than the handoff lane: widget launch is expected to be terminal-free. Any widget route that keeps a terminal attached is a noncompliant route, not an acceptable steady-state surface.
+- `blindtag widget` is the root CLI launchpoint routed through `blindtag.exe`; it should remain available unless explicitly retired by operator mandate.
+- `blindtag-widget.exe` remains the GUI-script handoff surface and the normal compliant terminal-free widget launch path.
+- The requirement itself is broader than the handoff lane: widget launch is expected to be terminal-free. The CLI route therefore needs truthful adaptation to the same handoff behavior, not implied removal.
 
 **Current follow-up verdict:**
 - Terminal-open behavior in the screenshot was explained by the launch surface used, not by a failed GUI-script registration.
-- That did **not** make the terminal-attached widget route acceptable, and Pass N removes that duplicate route from the supported root CLI surface.
+- That did **not** make the terminal-attached widget route acceptable; the required correction is to adapt the CLI launchpoint so it hands off cleanly instead of staying attached.
 - The 92px toggle-width adjustment landed in code but did **not** satisfy the visual target; treat that edit as insufficient, not absent.
 - Hidden-notification delivery remains unproven in live use. The last fix improved screen targeting and non-activating popup behavior, but the operator still did not observe the notification. This remains an open implementation gap.
 - The close-path traceback at `blindtag/widget.py:1468` indicates an additional runtime issue in the window close lane that was not covered by the last automated tests.
@@ -51,31 +51,31 @@ The codec engine and API are well-written and the test suite is thorough for the
 
 ### 1.1 `blindtag/core.py` — PASS with minor notes
 
-| Finding | Severity | Notes |
-|---------|----------|-------|
-| Logic is sound; encode/decode/strip are unambiguous | — | Good |
-| `PLANE14_MIN` / `PLANE14_MAX` constants declared but not used in public API surface | Low | Useful for external callers; keep but document intent |
-| `Optional` imported from `typing` — should be `str \| None` (Python 3.11+) | Low | Cleanup item for code-change pass |
-| No `__all__` export list | Low | Add to lock the public surface |
+| Finding                                                                             | Severity | Notes                                                 |
+| ----------------------------------------------------------------------------------- | -------- | ----------------------------------------------------- |
+| Logic is sound; encode/decode/strip are unambiguous                                 | —        | Good                                                  |
+| `PLANE14_MIN` / `PLANE14_MAX` constants declared but not used in public API surface | Low      | Useful for external callers; keep but document intent |
+| `Optional` imported from `typing` — should be `str \| None` (Python 3.11+)          | Low      | Cleanup item for code-change pass                     |
+| No `__all__` export list                                                            | Low      | Add to lock the public surface                        |
 
 ### 1.2 `blindtag/api.py` — PASS with security notes
 
-| Finding | Severity | Notes |
-|---------|----------|-------|
-| Pydantic validation + InvalidPayloadError handler in place | — | Good |
-| CORS restricted to localhost origins | — | Good |
-| No request ID / trace header on responses | Medium | Polymath style: every API response should carry a `X-Request-Id` or equivalent for retained-evidence tracing |
-| No rate limiting | Low | Localhost-only mitigates; note as accepted risk in SECURITY.md |
-| No `X-Content-Type-Options: nosniff` or security headers | Low | Standard hardening for any HTTP surface |
-| `run_server()` entry point in `api.py` — not visible in the portion read | Verify | Confirm this function exists; `pyproject.toml` script references it |
-| No version header in health response beyond JSON body | Low | Consider `X-BlindTag-Version` header for client negotiation |
+| Finding                                                                  | Severity | Notes                                                                                                        |
+| ------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------ |
+| Pydantic validation + InvalidPayloadError handler in place               | —        | Good                                                                                                         |
+| CORS restricted to localhost origins                                     | —        | Good                                                                                                         |
+| No request ID / trace header on responses                                | Medium   | Polymath style: every API response should carry a `X-Request-Id` or equivalent for retained-evidence tracing |
+| No rate limiting                                                         | Low      | Localhost-only mitigates; note as accepted risk in SECURITY.md                                               |
+| No `X-Content-Type-Options: nosniff` or security headers                 | Low      | Standard hardening for any HTTP surface                                                                      |
+| `run_server()` entry point in `api.py` — not visible in the portion read | Verify   | Confirm this function exists; `pyproject.toml` script references it                                          |
+| No version header in health response beyond JSON body                    | Low      | Consider `X-BlindTag-Version` header for client negotiation                                                  |
 
 ### 1.3 `blindtag/widget.py` — NOT REVIEWED (GUI, excluded from coverage)
 
-| Finding | Severity | Notes |
-|---------|----------|-------|
-| Zero test coverage | Medium | At minimum: smoke tests for `encode`/`decode` plumbing through widget logic; full GUI not required |
-| Clipboard watcher daemon thread — no documented stop condition beyond app close | Low | Document the shutdown contract explicitly |
+| Finding                                                                         | Severity | Notes                                                                                              |
+| ------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| Zero test coverage                                                              | Medium   | At minimum: smoke tests for `encode`/`decode` plumbing through widget logic; full GUI not required |
+| Clipboard watcher daemon thread — no documented stop condition beyond app close | Low      | Document the shutdown contract explicitly                                                          |
 
 ### 1.4 `blindtag/exceptions.py` — PASS
 
@@ -87,19 +87,19 @@ Clean hierarchy. `DecodingError` is defined but verify it is raised in the decod
 
 ### 2.1 `tests/test_core.py` — STRONG, two gaps
 
-| Finding | Severity | Action |
-|---------|----------|--------|
-| `TestDecodeNoPayload.test_only_tag_cancel_yields_none_or_empty` uses `assert result is None or result == ""` — ambiguous OR | Medium | **Resolve the contract:** TAG_CANCEL with no preceding payload chars should be `None` (no payload found). Update assertion to `assert result is None`. |
-| `DecodingError` is never exercised in test suite | Medium | Add `TestCrashImmunity` case: feed a synthetic Plane 14 sequence outside ASCII range (e.g. U+E007F+1 if reachable) to verify `DecodingError` is raised rather than swallowed |
-| No test for `encode()` called with empty hidden_message="" — currently raises `ValueError` | Low | Verify intent: should this raise `InvalidPayloadError` instead for consistency? |
+| Finding                                                                                                                     | Severity | Action                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TestDecodeNoPayload.test_only_tag_cancel_yields_none_or_empty` uses `assert result is None or result == ""` — ambiguous OR | Medium   | **Resolve the contract:** TAG_CANCEL with no preceding payload chars should be `None` (no payload found). Update assertion to `assert result is None`.                       |
+| `DecodingError` is never exercised in test suite                                                                            | Medium   | Add `TestCrashImmunity` case: feed a synthetic Plane 14 sequence outside ASCII range (e.g. U+E007F+1 if reachable) to verify `DecodingError` is raised rather than swallowed |
+| No test for `encode()` called with empty hidden_message="" — currently raises `ValueError`                                  | Low      | Verify intent: should this raise `InvalidPayloadError` instead for consistency?                                                                                              |
 
 ### 2.2 `tests/test_api.py` — GOOD, three gaps
 
-| Finding | Severity | Action |
-|---------|----------|--------|
-| No test for CORS headers (OPTIONS preflight, or `Origin` header response) | Low | Add `TestCORSPolicy` class |
-| No test exercising the `InvalidPayloadError` handler path directly (the Pydantic validator catches first) | Low | Send a request where Pydantic passes but core raises — construct a raw request bypassing validator |
-| No test for `GET /openapi.json` accessibility (important for tooling integrations) | Low | Add to `TestHealthEndpoint` |
+| Finding                                                                                                   | Severity | Action                                                                                             |
+| --------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| No test for CORS headers (OPTIONS preflight, or `Origin` header response)                                 | Low      | Add `TestCORSPolicy` class                                                                         |
+| No test exercising the `InvalidPayloadError` handler path directly (the Pydantic validator catches first) | Low      | Send a request where Pydantic passes but core raises — construct a raw request bypassing validator |
+| No test for `GET /openapi.json` accessibility (important for tooling integrations)                        | Low      | Add to `TestHealthEndpoint`                                                                        |
 
 ### 2.3 Widget tests — ABSENT
 
@@ -118,10 +118,10 @@ No Calamum test configuration exists in the repository. Per CodeSentinel policy,
 
 ### 3.2 Required artifacts
 
-| Artifact | Path | Notes |
-|----------|------|-------|
-| Calamum catalog JSON | `calamum_catalog.json` (root) | Defines the test suite lanes and run config |
-| Test run evidence dir | `report_tmp/` (gitignored) | Per project precedent |
+| Artifact              | Path                          | Notes                                       |
+| --------------------- | ----------------------------- | ------------------------------------------- |
+| Calamum catalog JSON  | `calamum_catalog.json` (root) | Defines the test suite lanes and run config |
+| Test run evidence dir | `report_tmp/` (gitignored)    | Per project precedent                       |
 
 ### 3.3 Minimum catalog definition (plan only)
 
@@ -137,18 +137,18 @@ With a combined rollup lane `all` running both. Evidence from `calamum test run 
 
 Reference: `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`
 
-| Invariant | Status | Gap / Action |
-|-----------|--------|-------------|
-| 1. No secrets in source control | PASS | `.gitignore` covers `.env*` |
-| 2. Environment is the keyring | N/A | No secrets required at runtime currently; document if API auth is added |
-| 3. Names-only documentation | PASS | No values exposed anywhere |
-| 4. Agents do not read secret material | PASS | No vault or secret reads |
-| 5. Fail closed on trust ambiguity | DEFERRED | API has no auth layer. **Framing this as a permanent "localhost-only" design decision is premature** — a reporting layer is planned post-widget that will require revisiting API transport scope, auth, and exposure model. Do NOT lock localhost-only into SECURITY.md until the reporting layer scope is defined. |
-| 6. Protected secret stores — integrity controls | N/A | No secret store |
-| 7. Sensitive state changes require authorization | N/A | No state mutations; document for future API auth additions |
-| 8. Retained evidence must be verifiable | GAP | API responses carry no checksums or request IDs; plan `X-Request-Id` header |
-| 9. Path containment enforced | PASS | No file I/O in codec or API |
-| 10. Security messaging useful and secret-safe | PASS | Error messages describe constraint without leaking values |
+| Invariant                                        | Status   | Gap / Action                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. No secrets in source control                  | PASS     | `.gitignore` covers `.env*`                                                                                                                                                                                                                                                                                         |
+| 2. Environment is the keyring                    | N/A      | No secrets required at runtime currently; document if API auth is added                                                                                                                                                                                                                                             |
+| 3. Names-only documentation                      | PASS     | No values exposed anywhere                                                                                                                                                                                                                                                                                          |
+| 4. Agents do not read secret material            | PASS     | No vault or secret reads                                                                                                                                                                                                                                                                                            |
+| 5. Fail closed on trust ambiguity                | DEFERRED | API has no auth layer. **Framing this as a permanent "localhost-only" design decision is premature** — a reporting layer is planned post-widget that will require revisiting API transport scope, auth, and exposure model. Do NOT lock localhost-only into SECURITY.md until the reporting layer scope is defined. |
+| 6. Protected secret stores — integrity controls  | N/A      | No secret store                                                                                                                                                                                                                                                                                                     |
+| 7. Sensitive state changes require authorization | N/A      | No state mutations; document for future API auth additions                                                                                                                                                                                                                                                          |
+| 8. Retained evidence must be verifiable          | GAP      | API responses carry no checksums or request IDs; plan `X-Request-Id` header                                                                                                                                                                                                                                         |
+| 9. Path containment enforced                     | PASS     | No file I/O in codec or API                                                                                                                                                                                                                                                                                         |
+| 10. Security messaging useful and secret-safe    | PASS     | Error messages describe constraint without leaking values                                                                                                                                                                                                                                                           |
 
 **Additional gap:** No `.env.example` file. Polymath standard requires one even when the current version has no secrets, to establish the pattern for future additions.
 
@@ -160,13 +160,13 @@ Reference: `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`
 
 Reference: `docs/guides/POLYMATH_USER_FACING_STYLE_AND_FORMATTING_EXPECTATIONS.md`
 
-| Surface | Status | Gap / Action |
-|---------|--------|-------------|
-| API error responses — structured JSON with reason + detail | PASS | `error_type` + `detail` fields present |
-| API success responses — complete schema | PASS | All four questions answerable from response body |
-| CLI launcher `run_api.py` — help text | Verify | Confirm `--help` output meets style contract |
-| CLI launcher `run_widget.py` — help text | Verify | Same |
-| Health endpoint — version in response | PASS | `version` field present |
+| Surface                                                    | Status  | Gap / Action                                                                 |
+| ---------------------------------------------------------- | ------- | ---------------------------------------------------------------------------- |
+| API error responses — structured JSON with reason + detail | PASS    | `error_type` + `detail` fields present                                       |
+| API success responses — complete schema                    | PASS    | All four questions answerable from response body                             |
+| CLI launcher `run_api.py` — help text                      | Verify  | Confirm `--help` output meets style contract                                 |
+| CLI launcher `run_widget.py` — help text                   | Verify  | Same                                                                         |
+| Health endpoint — version in response                      | PASS    | `version` field present                                                      |
 | API response: "what happened / why / next action" contract | PARTIAL | Decode miss response has `detail` string but no `next_action` field guidance |
 
 ---
@@ -175,22 +175,22 @@ Reference: `docs/guides/POLYMATH_USER_FACING_STYLE_AND_FORMATTING_EXPECTATIONS.m
 
 ### 6.1 `pyproject.toml` gaps
 
-| Gap | Severity | Fix |
-|-----|----------|-----|
-| `setuptools.backends.legacy:build` is deprecated | Medium | Change to `setuptools.build_meta` |
-| No `[project.authors]` field | Medium | Add `authors = [{name = "Polymath", email = "dev@polymath-global.com"}]` |
-| No `[project.urls]` section | Medium | Add Homepage, Source, Issues URLs |
-| No trove classifiers | Low | Add Python version, OS, topic classifiers |
-| No `ruff` or `mypy` config section | Low | Add for lint/type-check consistency |
+| Gap                                              | Severity | Fix                                                                      |
+| ------------------------------------------------ | -------- | ------------------------------------------------------------------------ |
+| `setuptools.backends.legacy:build` is deprecated | Medium   | Change to `setuptools.build_meta`                                        |
+| No `[project.authors]` field                     | Medium   | Add `authors = [{name = "Polymath", email = "dev@polymath-global.com"}]` |
+| No `[project.urls]` section                      | Medium   | Add Homepage, Source, Issues URLs                                        |
+| No trove classifiers                             | Low      | Add Python version, OS, topic classifiers                                |
+| No `ruff` or `mypy` config section               | Low      | Add for lint/type-check consistency                                      |
 
 ### 6.2 Missing files
 
-| File | Action |
-|------|--------|
-| `.env.example` | Create — placeholder only, no values |
-| `docs/` directory | Create — currently only `REVIEW_AND_MATURITY_PLAN.md` exists |
-| `.github/workflows/ci.yml` | Create — run `pytest tests/` on push to main |
-| `docs/CALAMUM_BASELINE.md` | Create after first `calamum test` run passes |
+| File                       | Action                                                       |
+| -------------------------- | ------------------------------------------------------------ |
+| `.env.example`             | Create — placeholder only, no values                         |
+| `docs/` directory          | Create — currently only `REVIEW_AND_MATURITY_PLAN.md` exists |
+| `.github/workflows/ci.yml` | Create — run `pytest tests/` on push to main                 |
+| `docs/CALAMUM_BASELINE.md` | Create after first `calamum test` run passes                 |
 
 ---
 
@@ -267,10 +267,10 @@ Summary: palette migration to cool-navy ecosystem, Clip Watch checkbox → glow 
 
 #### I.1 — Posture model
 
-| Posture | Window state | Watcher | Notification |
-|---|---|---|---|
+| Posture        | Window state           | Watcher        | Notification                                            |
+| -------------- | ---------------------- | -------------- | ------------------------------------------------------- |
 | `"foreground"` | Visible, always-on-top | Active or idle | Inline blue `QLabel` banner (current `_notify_payload`) |
-| `"background"` | Hidden, in taskbar | Active | `NotificationWidget.show_for(preview)` |
+| `"background"` | Hidden, in taskbar     | Active         | `NotificationWidget.show_for(preview)`                  |
 
 **Transitions:**
 - **→ background:** Clip Watch button active (checked) + user clicks "Hide" button in title bar. `self.hide()`, `_posture = "background"`.
@@ -474,18 +474,18 @@ All `TestNotificationWidget` tests are headless — `NotificationWidget` is inst
 
 #### I.7 — Polymath security alignment
 
-| Invariant | Assessment |
-|---|---|
-| 1. No secrets in source control | PASS — no new credentials, keys, or secrets introduced |
-| 2. Environment is the keyring | N/A — no secrets at runtime in this pass |
-| 3. Names-only documentation | PASS — plan documents class/method names only |
-| 4. Agents do not read secret material | PASS |
-| 5. Fail closed on trust ambiguity | PASS — no trust surface introduced; notification shows 48-char excerpt only; `decode()` called on clipboard text as before |
-| 6. Protected stores require integrity controls | N/A |
-| 7. Sensitive state changes require explicit authorization | PASS — posture change is explicit user button click; no silent background transitions |
-| 8. Retained evidence must be verifiable | PASS — calamum gate produces verifiable `report.json` + stdout/stderr; no new evidence artifacts escape outside `calamum` control |
-| 9. Path containment enforced | PASS — `notification.py` reads no files; writes no files; no new file I/O |
-| 10. Security messaging useful and secret-safe | PASS — `NotificationWidget` shows `preview[:48]` only, same truncation rule as existing `_notify_payload` |
+| Invariant                                                 | Assessment                                                                                                                        |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 1. No secrets in source control                           | PASS — no new credentials, keys, or secrets introduced                                                                            |
+| 2. Environment is the keyring                             | N/A — no secrets at runtime in this pass                                                                                          |
+| 3. Names-only documentation                               | PASS — plan documents class/method names only                                                                                     |
+| 4. Agents do not read secret material                     | PASS                                                                                                                              |
+| 5. Fail closed on trust ambiguity                         | PASS — no trust surface introduced; notification shows 48-char excerpt only; `decode()` called on clipboard text as before        |
+| 6. Protected stores require integrity controls            | N/A                                                                                                                               |
+| 7. Sensitive state changes require explicit authorization | PASS — posture change is explicit user button click; no silent background transitions                                             |
+| 8. Retained evidence must be verifiable                   | PASS — calamum gate produces verifiable `report.json` + stdout/stderr; no new evidence artifacts escape outside `calamum` control |
+| 9. Path containment enforced                              | PASS — `notification.py` reads no files; writes no files; no new file I/O                                                         |
+| 10. Security messaging useful and secret-safe             | PASS — `NotificationWidget` shows `preview[:48]` only, same truncation rule as existing `_notify_payload`                         |
 
 No new SEAM blockers.
 
@@ -526,18 +526,18 @@ No change. No new entry point.
 
 #### I.11 — Deliverables and sequence
 
-| # | Artifact | Action | Dependency |
-|---|---|---|---|
-| 1 | `blindtag/notification.py` | CREATE | None |
-| 2 | `blindtag/widget.py` | MODIFY | Requires (1) — import `NotificationWidget`; add `_posture`, `_bg_notif`; branch in `_notify_payload`; "Hide" button; `showEvent`; self-detection guard |
-| 3 | `tests/test_widget.py` | MODIFY | Requires (1)(2) — add `TestNotificationWidget` + `TestBackgroundPosture` |
-| 4 | `catalog/test_definitions.json` | MODIFY | Requires (3) — update `blindtag-widget` notes field |
-| 5 | `CHANGELOG.md` | MODIFY | Requires gate pass |
-| **Gate** | `calamum test run blindtag-all --project <path>` | RUN | After (1–4); `decision: go` required before (5) and commit |
-| 6 | **Package reinstall** | `pip install -e .` in `.venv-core` | Required after Pass L `pyproject.toml` change moved `blindtag-widget` to `[project.gui-scripts]`; regenerates `blindtag-widget.exe` shim as `pythonw`-backed |
-| 7 | **Live visual test** | Launch `blindtag-widget`, observe: no terminal, Hide button present, background posture + corner notification fire | After (6); must be run and observed before lane closeout |
+| #        | Artifact                                         | Action                                                                                                             | Dependency                                                                                                                                                   |
+| -------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1        | `blindtag/notification.py`                       | CREATE                                                                                                             | None                                                                                                                                                         |
+| 2        | `blindtag/widget.py`                             | MODIFY                                                                                                             | Requires (1) — import `NotificationWidget`; add `_posture`, `_bg_notif`; branch in `_notify_payload`; "Hide" button; `showEvent`; self-detection guard       |
+| 3        | `tests/test_widget.py`                           | MODIFY                                                                                                             | Requires (1)(2) — add `TestNotificationWidget` + `TestBackgroundPosture`                                                                                     |
+| 4        | `catalog/test_definitions.json`                  | MODIFY                                                                                                             | Requires (3) — update `blindtag-widget` notes field                                                                                                          |
+| 5        | `CHANGELOG.md`                                   | MODIFY                                                                                                             | Requires gate pass                                                                                                                                           |
+| **Gate** | `calamum test run blindtag-all --project <path>` | RUN                                                                                                                | After (1–4); `decision: go` required before (5) and commit                                                                                                   |
+| 6        | **Package reinstall**                            | `pip install -e .` in `.venv-core`                                                                                 | Required after Pass L `pyproject.toml` change moved `blindtag-widget` to `[project.gui-scripts]`; regenerates `blindtag-widget.exe` shim as `pythonw`-backed |
+| 7        | **Live visual test**                             | Launch `blindtag-widget`, observe: no terminal, Hide button present, background posture + corner notification fire | After (6); must be run and observed before lane closeout                                                                                                     |
 
-**Status (revised 2026-05-31):** Steps 1–5 + Gate complete. The installed GUI shim lane (`blindtag-widget.exe`) remains the only valid no-terminal handoff surface. Follow-up operator evidence showed a retest from `blindtag widget` (console surface), which correctly kept a terminal open. Hidden-notification live behavior remains unresolved, and the close-path traceback at `widget.py:1468` requires a dedicated remediation pass before claiming the hidden-notification lane is fully stable.
+**Status (revised 2026-05-31):** Steps 1–5 + Gate complete. The installed GUI shim lane (`blindtag-widget.exe`) remains the normal no-terminal handoff surface. Follow-up operator evidence showed that the then-current `blindtag widget` implementation still kept a terminal open, so the correction lane is to restore that CLI launchpoint and adapt it to the same handoff behavior rather than retire it. Hidden-notification live behavior remains unresolved, and the close-path traceback at `widget.py:1468` requires a dedicated remediation pass before claiming the hidden-notification lane is fully stable.
 
 **Live test command (exact, copy-paste-ready):**
 ```powershell
@@ -548,12 +548,12 @@ Set-Location "c:\Users\joedi\Documents\CodeSentinel-1\projects\blindtag"
 
 Execute in order. Reinstall must precede widget launch to flush the stale shim.
 
-**Retired from the supported root CLI surface:**
+**Supported compatibility launcher (must hand off cleanly):**
 ```powershell
 blindtag widget
 ```
 
-Pass N retires that duplicate route so the supported widget launch contract remains unambiguous and terminal-free.
+This route remains part of the public CLI surface. The requirement is not retirement by implication; it is truthful terminal-free handoff behavior.
 
 ---
 
@@ -575,18 +575,18 @@ Pass N retires that duplicate route so the supported widget launch contract rema
 
 Full token mapping. Every constant in `widget.py` must be updated; no old value retained.
 
-| Constant | Old value | New value | Rationale |
-|---|---|---|---|
-| `C_BG` | `#121212` | `#0a0d12` | Warm charcoal → cool deep navy (matches Vulcan `background`) |
-| `C_SECONDARY` | `#1E1E1E` | `#10161f` | → Vulcan `surface` — navy-tinted |
-| `C_SURFACE` | `#252525` | `#16212d` | → Vulcan `surface_card` — navy card |
-| `C_ACCENT` | `#4A90D9` | `#3dd5f3` | Office blue → brand cyan (Vulcan `brand`) |
-| `C_ACCENT_H` | `#5BA3F0` | `#62daf7` | Hover lightened brand cyan |
-| `C_TEXT` | `#E8E8E8` | `#edf2f7` | Warm white → cool near-white (Vulcan `text`) |
-| `C_MUTED` | `#888888` | `#9aa9bc` | Warm gray → cool blue-gray (Vulcan `muted`) |
-| `C_SUCCESS` | `#4CAF6E` | `#4fc08d` | Match Vulcan `success` |
-| `C_WARNING` | `#E8A838` | `#f3a948` | Match Vulcan `warning` |
-| `C_ERROR` | `#E85555` | `#e25757` | Match Vulcan `danger` |
+| Constant      | Old value | New value | Rationale                                                    |
+| ------------- | --------- | --------- | ------------------------------------------------------------ |
+| `C_BG`        | `#121212` | `#0a0d12` | Warm charcoal → cool deep navy (matches Vulcan `background`) |
+| `C_SECONDARY` | `#1E1E1E` | `#10161f` | → Vulcan `surface` — navy-tinted                             |
+| `C_SURFACE`   | `#252525` | `#16212d` | → Vulcan `surface_card` — navy card                          |
+| `C_ACCENT`    | `#4A90D9` | `#3dd5f3` | Office blue → brand cyan (Vulcan `brand`)                    |
+| `C_ACCENT_H`  | `#5BA3F0` | `#62daf7` | Hover lightened brand cyan                                   |
+| `C_TEXT`      | `#E8E8E8` | `#edf2f7` | Warm white → cool near-white (Vulcan `text`)                 |
+| `C_MUTED`     | `#888888` | `#9aa9bc` | Warm gray → cool blue-gray (Vulcan `muted`)                  |
+| `C_SUCCESS`   | `#4CAF6E` | `#4fc08d` | Match Vulcan `success`                                       |
+| `C_WARNING`   | `#E8A838` | `#f3a948` | Match Vulcan `warning`                                       |
+| `C_ERROR`     | `#E85555` | `#e25757` | Match Vulcan `danger`                                        |
 
 **New constant — add after `C_ACCENT_H`:**
 ```python
@@ -698,13 +698,13 @@ This matches the Polyventure pattern where primary actions carry a visible brand
 
 The following items were specified in earlier pass plans but not yet executed. They are formally swept into Pass K as the canonical implementation home:
 
-| Item | Source | Action |
-|---|---|---|
-| Taskbar icon (app-level) | Section 10 "Preserved design decisions" | §K.3 above |
-| `C_LINE` border token | Section 1.3 (`#303030` hardcoded) | §K.1 — new constant + sweep |
-| Clip Watch as non-checkbox control | Section 1.3 widget finding | §K.2 above |
-| `QCheckBox` import removal | Code hygiene | Remove from imports after K.2 |
-| `_APP_STYLESHEET` palette accuracy | All passes | Resolved by §K.1 token update |
+| Item                               | Source                                  | Action                        |
+| ---------------------------------- | --------------------------------------- | ----------------------------- |
+| Taskbar icon (app-level)           | Section 10 "Preserved design decisions" | §K.3 above                    |
+| `C_LINE` border token              | Section 1.3 (`#303030` hardcoded)       | §K.1 — new constant + sweep   |
+| Clip Watch as non-checkbox control | Section 1.3 widget finding              | §K.2 above                    |
+| `QCheckBox` import removal         | Code hygiene                            | Remove from imports after K.2 |
+| `_APP_STYLESHEET` palette accuracy | All passes                              | Resolved by §K.1 token update |
 
 ---
 
@@ -723,11 +723,11 @@ $proj = "c:\Users\joedi\Documents\CodeSentinel-1\projects\blindtag"
 
 #### K.8 — Deliverables and sequence
 
-| # | Artifact | Action | Notes |
-|---|---|---|---|
-| 1 | `blindtag/widget.py` | MODIFY | Update color constants (§K.1); add `C_LINE`; replace `#303030` occurrences; add glow-button style helpers (§K.2); replace `QCheckBox` with `QPushButton` (§K.2); fix `run_widget()` taskbar icon (§K.3); freshen `_btn_primary_style` border (§K.4); remove `QCheckBox` import |
-| 2 | `CHANGELOG.md` | MODIFY | Pass K entry after gate pass |
-| **Gate** | `calamum test run blindtag-all` | RUN | `decision: go` required before commit and before Pass I begins |
+| #        | Artifact                        | Action | Notes                                                                                                                                                                                                                                                                          |
+| -------- | ------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1        | `blindtag/widget.py`            | MODIFY | Update color constants (§K.1); add `C_LINE`; replace `#303030` occurrences; add glow-button style helpers (§K.2); replace `QCheckBox` with `QPushButton` (§K.2); fix `run_widget()` taskbar icon (§K.3); freshen `_btn_primary_style` border (§K.4); remove `QCheckBox` import |
+| 2        | `CHANGELOG.md`                  | MODIFY | Pass K entry after gate pass                                                                                                                                                                                                                                                   |
+| **Gate** | `calamum test run blindtag-all` | RUN    | `decision: go` required before commit and before Pass I begins                                                                                                                                                                                                                 |
 
 ---
 
@@ -735,16 +735,16 @@ $proj = "c:\Users\joedi\Documents\CodeSentinel-1\projects\blindtag"
 
 The target aesthetic (verified across sources):
 
-| Property | Target value | Source |
-|---|---|---|
-| Background | Deep cool navy, not warm charcoal | Vulcan `#0a0d12`, website `#0a0a0a` |
-| Brand/accent | Cyan `#3dd5f3` | Vulcan `brand` token |
-| Muted text | Cool blue-gray `#9aa9bc` | Vulcan `muted` |
-| Borders | Navy-tinted `#263546` | Vulcan `line` |
-| Selected button | Brand-color border (2px) + transparent/tinted bg | Polyventure OPERATOR CONTROLS pattern |
-| Idle button | 1px muted border, no fill, dim text | Polyventure EVIDENCE pattern |
-| Hover transition | Border lightens to brand; text brightens | Polyventure hover behavior |
-| Primary CTA | Filled brand color + 1px border frame | Polyventure primary action style |
+| Property         | Target value                                     | Source                                |
+| ---------------- | ------------------------------------------------ | ------------------------------------- |
+| Background       | Deep cool navy, not warm charcoal                | Vulcan `#0a0d12`, website `#0a0a0a`   |
+| Brand/accent     | Cyan `#3dd5f3`                                   | Vulcan `brand` token                  |
+| Muted text       | Cool blue-gray `#9aa9bc`                         | Vulcan `muted`                        |
+| Borders          | Navy-tinted `#263546`                            | Vulcan `line`                         |
+| Selected button  | Brand-color border (2px) + transparent/tinted bg | Polyventure OPERATOR CONTROLS pattern |
+| Idle button      | 1px muted border, no fill, dim text              | Polyventure EVIDENCE pattern          |
+| Hover transition | Border lightens to brand; text brightens         | Polyventure hover behavior            |
+| Primary CTA      | Filled brand color + 1px border frame            | Polyventure primary action style      |
 
 ---
 
@@ -782,11 +782,11 @@ Decode:  [ Decode ]   [ Clear All ]
 
 **Locked design contract (from mockup):** Existing rows are display rows. The only editable controls on this page live in the single add-entry row at the bottom.
 
-| Column | Content | Example |
-|--------|---------|---------|
+| Column       | Content                                       | Example         |
+| ------------ | --------------------------------------------- | --------------- |
 | Glyph / Code | Glyph plus its derived Unicode representation | `👎` / `U+1F44E` |
-| Alias | Active alias string | `:thumbsdown:` |
-| Label | Human-readable name | `thumbs down` |
+| Alias        | Active alias string                           | `:thumbsdown:`  |
+| Label        | Human-readable name                           | `thumbs down`   |
 
 The glyph icon remains at the far left. The `×` remove button remains at the far right.
 
@@ -810,9 +810,9 @@ If the user enters a glyph, the Unicode code is derived for display in the recor
 
 #### M.3 — Hidden-mode relaunch behavior (settled)
 
-| # | Gap | Options | Impact |
-|---|-----|---------|--------|
-| 1 | **Hidden-mode relaunch path when the widget is hidden** | Persistent notification window acts as the click-to-relaunch anchor until dismissed or replaced | This is settled. `NotificationWidget` becomes the explicit relaunch surface in hidden posture. Replacement rule: newest hidden notification replaces the previous one. Taskbar presence remains incidental, not the primary UX contract. |
+| #   | Gap                                                     | Options                                                                                         | Impact                                                                                                                                                                                                                                   |
+| --- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Hidden-mode relaunch path when the widget is hidden** | Persistent notification window acts as the click-to-relaunch anchor until dismissed or replaced | This is settled. `NotificationWidget` becomes the explicit relaunch surface in hidden posture. Replacement rule: newest hidden notification replaces the previous one. Taskbar presence remains incidental, not the primary UX contract. |
 
 ---
 
@@ -875,29 +875,29 @@ Where signing is configured for the environment, retained JSON artifacts should 
 
 #### M.6 — Deliverables and sequence
 
-| # | Artifact | Action | Notes |
-|---|---|---|---|
-| 1 | `blindtag/widget.py` | MODIFY | Rename the remaining encode CTA to `Encode & Copy`; remove secondary `Encode`; remove `Paste & Decode` so `Decode` is the single action; keep hidden notifications persistent while hidden until dismissed or replaced; rewrite `_make_row()` in `_LibraryEditorPanel` to 3-column display layout; update add row to `glyph/code`, `alias`, `label`; derive glyph/code pair at creation time |
-| 2 | `tests/test_widget.py` | MODIFY | Add `TestLibraryEditorColumns`, `TestActionButtonCleanup`, and `TestHiddenNotificationAnchor` |
-| 3 | `catalog/test_definitions.json` | MODIFY | Update `blindtag-widget` notes field |
-| 4 | `CHANGELOG.md` | MODIFY | After gate pass |
-| **Gate** | `calamum test run blindtag-all --project <path>` | RUN | `decision: go` required before commit; retain `report_json`, `report_md`, `manifest_json`, `checksums_json` evidence set |
-| **Evidence verify** | Verify Calamum artifacts | RUN | Confirm manifest/checksum set exists; where signing is configured, verify signed artifact path remains valid |
-| **Live handoff** | Launch installed widget | RUN | `pip install -e .` → `blindtag-widget.exe` → visually confirm persistent hidden notification anchor, single CTA per panel, and display-only library rows |
+| #                   | Artifact                                         | Action | Notes                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------- | ------------------------------------------------ | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1                   | `blindtag/widget.py`                             | MODIFY | Rename the remaining encode CTA to `Encode & Copy`; remove secondary `Encode`; remove `Paste & Decode` so `Decode` is the single action; keep hidden notifications persistent while hidden until dismissed or replaced; rewrite `_make_row()` in `_LibraryEditorPanel` to 3-column display layout; update add row to `glyph/code`, `alias`, `label`; derive glyph/code pair at creation time |
+| 2                   | `tests/test_widget.py`                           | MODIFY | Add `TestLibraryEditorColumns`, `TestActionButtonCleanup`, and `TestHiddenNotificationAnchor`                                                                                                                                                                                                                                                                                                |
+| 3                   | `catalog/test_definitions.json`                  | MODIFY | Update `blindtag-widget` notes field                                                                                                                                                                                                                                                                                                                                                         |
+| 4                   | `CHANGELOG.md`                                   | MODIFY | After gate pass                                                                                                                                                                                                                                                                                                                                                                              |
+| **Gate**            | `calamum test run blindtag-all --project <path>` | RUN    | `decision: go` required before commit; retain `report_json`, `report_md`, `manifest_json`, `checksums_json` evidence set                                                                                                                                                                                                                                                                     |
+| **Evidence verify** | Verify Calamum artifacts                         | RUN    | Confirm manifest/checksum set exists; where signing is configured, verify signed artifact path remains valid                                                                                                                                                                                                                                                                                 |
+| **Live handoff**    | Launch installed widget                          | RUN    | `pip install -e .` → `blindtag-widget.exe` → visually confirm persistent hidden notification anchor, single CTA per panel, and display-only library rows                                                                                                                                                                                                                                     |
 
 **Handoff gate applies.** After any `widget.py` change: `pip install -e .` → launch `blindtag-widget.exe` → confirm library editor rows show 3 columns and action rows show single primary CTA each.
 
 #### M.7 — 2026-05-31 evidence review: keep / adapt / remove classification
 
-| Edit from 2026-05-31 passes | Evidence | Classification | Notes |
-|---|---|---|---|
-| `pyproject.toml` GUI-script entry for `blindtag-widget` | Present in current package config; `blindtag-widget.exe` exists in `.venv-core\Scripts\` | **KEEP** | This remains the correct no-terminal handoff surface. |
-| Pass M single-action cleanup (`Encode & Copy`, `Decode`, display-only library rows, add-row contract) | Reflected in current widget code and user screenshot | **KEEP** | These changes match the locked design lane. |
-| Persistent hidden-notification anchor concept | Still the locked UX contract | **KEEP** | The concept remains correct even though delivery is not yet reliable. |
-| Notification hardening via `WA_ShowWithoutActivating`, `NoFocus`, `_target_screen()` | Landed in `notification.py`, but operator still observed no notification | **ADAPT** | Keep as partial groundwork; do not treat as sufficient fix. Next pass must investigate why the popup never becomes visible in the real hidden workflow. |
-| Toggle-width reduction to `setFixedWidth(92)` and reduced padding | Landed in `widget.py`, but user still judged the tabs too wide | **ADAPT** | The edit stuck in code; it simply missed the visual target. |
-| Prior claim that the hidden-notification lane was complete/validated | Contradicted by current operator evidence | **REMOVE** | Replace with narrower wording: automated tests passed, but live notification delivery remains unresolved. |
-| Any wording that normalizes terminal-attached widget launch as acceptable | Conflicts with operator requirement that widget launch be terminal-free | **REMOVE** | Replace with stricter wording: terminal-attached widget routes are currently noncompliant and must be adapted or retired. |
+| Edit from 2026-05-31 passes                                                                           | Evidence                                                                                 | Classification | Notes                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pyproject.toml` GUI-script entry for `blindtag-widget`                                               | Present in current package config; `blindtag-widget.exe` exists in `.venv-core\Scripts\` | **KEEP**       | This remains the correct no-terminal handoff surface.                                                                                                   |
+| Pass M single-action cleanup (`Encode & Copy`, `Decode`, display-only library rows, add-row contract) | Reflected in current widget code and user screenshot                                     | **KEEP**       | These changes match the locked design lane.                                                                                                             |
+| Persistent hidden-notification anchor concept                                                         | Still the locked UX contract                                                             | **KEEP**       | The concept remains correct even though delivery is not yet reliable.                                                                                   |
+| Notification hardening via `WA_ShowWithoutActivating`, `NoFocus`, `_target_screen()`                  | Landed in `notification.py`, but operator still observed no notification                 | **ADAPT**      | Keep as partial groundwork; do not treat as sufficient fix. Next pass must investigate why the popup never becomes visible in the real hidden workflow. |
+| Toggle-width reduction to `setFixedWidth(92)` and reduced padding                                     | Landed in `widget.py`, but user still judged the tabs too wide                           | **ADAPT**      | The edit stuck in code; it simply missed the visual target.                                                                                             |
+| Prior claim that the hidden-notification lane was complete/validated                                  | Contradicted by current operator evidence                                                | **REMOVE**     | Replace with narrower wording: automated tests passed, but live notification delivery remains unresolved.                                               |
+| Any wording that normalizes terminal-attached widget launch as acceptable                             | Conflicts with operator requirement that widget launch be terminal-free                  | **REMOVE**     | Replace with stricter wording: terminal-attached widget routes are currently noncompliant and must be adapted or retired.                               |
 
 ---
 
@@ -911,13 +911,13 @@ Where signing is configured for the environment, retained JSON artifacts should 
 
 #### N.1 — Evidence snapshot (2026-05-31)
 
-| Open item | Evidence | Verified state |
-|---|---|---|
-| Terminal-free widget launch is non-negotiable | Operator clarification on 2026-05-31; handoff gate at top of this document | Requirement is locked: widget launch must be terminal-free. |
-| Current widget CLI duplication creates ambiguity | `pyproject.toml` has `blindtag-widget` under `[project.gui-scripts]`; `blindtag/cli.py` previously exposed `blindtag widget` | Resolved in Pass N by retiring the duplicate CLI widget route; `blindtag-widget.exe` remains the sole compliant terminal-free widget surface. |
-| Top toggle buttons remain visually too wide | Operator screenshot after the 92px width change; current `widget.py` shows `setFixedWidth(92)` for both toggles | The last geometry tweak landed in code but did not reach the approved design target. |
-| Hidden notification still not observed live | Operator screenshot and follow-up report; current `notification.py` contains `_target_screen()`, `WA_ShowWithoutActivating`, and persistent mode | The concept and partial hardening exist, but live visibility remains unresolved. |
-| Close lane has an unclosed runtime defect | Operator screenshot includes traceback pointing at `blindtag/widget.py:1468` (`closeEvent`) | The close path is not yet proven stable in the live hidden-notification workflow. |
+| Open item                                        | Evidence                                                                                                                                         | Verified state                                                                                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Terminal-free widget launch is non-negotiable    | Operator clarification on 2026-05-31; handoff gate at top of this document                                                                       | Requirement is locked: widget launch must be terminal-free.                                                                                   |
+| Current widget CLI duplication creates ambiguity | `pyproject.toml` has `blindtag-widget` under `[project.gui-scripts]`; `blindtag/cli.py` exposes `blindtag widget`                     | Current correction direction is to keep the CLI launchpoint and adapt it to hand off to `blindtag-widget.exe` truthfully instead of removing it. |
+| Top toggle buttons remain visually too wide      | Operator screenshot after the 92px width change; current `widget.py` shows `setFixedWidth(92)` for both toggles                                  | The last geometry tweak landed in code but did not reach the approved design target.                                                          |
+| Hidden notification still not observed live      | Operator screenshot and follow-up report; current `notification.py` contains `_target_screen()`, `WA_ShowWithoutActivating`, and persistent mode | The concept and partial hardening exist, but live visibility remains unresolved.                                                              |
+| Close lane has an unclosed runtime defect        | Operator screenshot includes traceback pointing at `blindtag/widget.py:1468` (`closeEvent`)                                                      | The close path is not yet proven stable in the live hidden-notification workflow.                                                             |
 
 ---
 
@@ -930,7 +930,7 @@ Where signing is configured for the environment, retained JSON artifacts should 
 5. **No evidence downgrade.** This pass must retain the current Calamum artifact family (`report_json`, `report_md`, `manifest_json`, `checksums_json`, checksum sidecars) and verify signatures/checksums where the environment is configured for signing.
 
 **Execution outcome (2026-05-31):**
-- Lane N-A implemented via surface consolidation: the root CLI `widget` subcommand was retired, and `blindtag-widget` remains the dedicated GUI surface.
+- Lane N-A was initially executed via surface consolidation, but that retirement decision exceeded the authorized scope and is being corrected by restoring the CLI launchpoint and adapting it instead.
 - Lane N-B implemented via notification-window flag/show-path hardening plus safe recreation/teardown handling for the background notification object.
 - Lane N-C implemented via a stricter compact-width toggle contract.
 - Focused regressions passed (`85 passed` across `tests/test_cli.py` + `tests/test_widget.py`).
@@ -940,7 +940,8 @@ Where signing is configured for the environment, retained JSON artifacts should 
 
 **Rejected alternatives for this pass:**
 - Adding tray infrastructure or platform-native notifications — out of scope and unnecessary before the current single-window route is corrected.
-- Treating `blindtag widget` as acceptable “developer-only” product behavior — rejected by operator requirement.
+- Treating `blindtag widget` as acceptable terminal-attached product behavior — rejected by operator requirement.
+- Implicitly retiring `blindtag widget` without explicit operator mandate — rejected by operator correction.
 - Declaring the hidden-notification lane complete based only on focused pytest — rejected by live evidence.
 
 ---
@@ -951,10 +952,8 @@ This pass is limited to three corrective lanes:
 
 ##### Lane N-A — Widget launch compliance
 - Remove ambiguity between the compliant GUI surface and the terminal-attached widget route.
-- Choose one of two allowed end states during implementation review:
-  1. **Retire** the `blindtag widget` subcommand from the user-facing CLI surface, leaving `blindtag-widget` as the sole supported widget launcher; or
-  2. **Adapt** the `blindtag widget` route so it no longer leaves the widget attached to a terminal and truthfully satisfies the same terminal-free contract.
-- The preferred direction is **surface consolidation** (retire the duplicate CLI widget route) unless a cross-platform, evidence-clean detached invocation is shown to be simpler and equally truthful.
+- The authorized current direction is to **adapt** the `blindtag widget` route so it no longer leaves the widget attached to a terminal and truthfully satisfies the same terminal-free contract.
+- `blindtag-widget` remains the dedicated GUI surface; `blindtag widget` remains the public CLI compatibility launchpoint.
 
 ##### Lane N-B — Hidden-notification live closure
 - Investigate why `NotificationWidget.show_for(..., persistent=True)` remains invisible in live hidden posture despite current tests.
@@ -1025,18 +1024,18 @@ Per `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`, Pass N must pr
 
 #### N.5 — Deliverables and execution sequence
 
-| # | Artifact | Action | Notes |
-|---|---|---|---|
-| 1 | `blindtag/cli.py` and/or `pyproject.toml` | MODIFY | Only if needed to retire or adapt the noncompliant `blindtag widget` route; keep one truthful widget launch contract. |
-| 2 | `blindtag/widget.py` | MODIFY | Notification-path remediation, close-path stabilization, and top-toggle visual parity correction. |
-| 3 | `blindtag/notification.py` | MODIFY | Only if required by the hidden-notification visibility/root-cause findings. |
-| 4 | `tests/test_widget.py` | MODIFY | Add focused regression coverage for the specific N-A / N-B / N-C acceptance boundaries. |
-| 5 | `catalog/test_definitions.json` | MODIFY | Update widget notes only if new focused coverage materially changes the lane contract. |
-| 6 | `CHANGELOG.md` | MODIFY | Record Pass N only after gate pass. |
-| **Gate A** | Focused widget pytest | RUN | Clean targeted regressions required before full Calamum gate. |
-| **Gate B** | `calamum test run blindtag-all --project <path>` | RUN | `decision: go` required before commit. |
-| **Gate C** | Evidence verification | RUN | Verify manifest/checksum family and signature verification where configured. |
-| **Gate D** | Live handoff | RUN | `pip install -e .` → launch compliant terminal-free widget surface → visually confirm notification visibility, compact toggles, and clean close behavior. |
+| #          | Artifact                                         | Action | Notes                                                                                                                                                     |
+| ---------- | ------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1          | `blindtag/cli.py` and/or `pyproject.toml`        | MODIFY | Adapt the noncompliant `blindtag widget` route so it hands off to the same truthful widget launch contract without removing the public CLI launchpoint.    |
+| 2          | `blindtag/widget.py`                             | MODIFY | Notification-path remediation, close-path stabilization, and top-toggle visual parity correction.                                                         |
+| 3          | `blindtag/notification.py`                       | MODIFY | Only if required by the hidden-notification visibility/root-cause findings.                                                                               |
+| 4          | `tests/test_widget.py`                           | MODIFY | Add focused regression coverage for the specific N-A / N-B / N-C acceptance boundaries.                                                                   |
+| 5          | `catalog/test_definitions.json`                  | MODIFY | Update widget notes only if new focused coverage materially changes the lane contract.                                                                    |
+| 6          | `CHANGELOG.md`                                   | MODIFY | Record Pass N only after gate pass.                                                                                                                       |
+| **Gate A** | Focused widget pytest                            | RUN    | Clean targeted regressions required before full Calamum gate.                                                                                             |
+| **Gate B** | `calamum test run blindtag-all --project <path>` | RUN    | `decision: go` required before commit.                                                                                                                    |
+| **Gate C** | Evidence verification                            | RUN    | Verify manifest/checksum family and signature verification where configured.                                                                              |
+| **Gate D** | Live handoff                                     | RUN    | `pip install -e .` → launch compliant terminal-free widget surface → visually confirm notification visibility, compact toggles, and clean close behavior. |
 
 ---
 
@@ -1077,18 +1076,18 @@ Blindtag's primary use model is **imported and used via API by other application
 
 **Logging and reporting requirements (known inputs, not final decisions):**
 
-| Requirement | Detail |
-|-------------|--------|
-| Tiered logging | `debug`, `info`, `warning`, `error`, `critical` — all five levels used deliberately |
-| Default level | `warning` for widget and library import; `info` for API server; `debug` available via CLI |
-| CLI control | `blindtag --log-level debug` raises verbosity for any subcommand except widget |
-| Library import safety | No handler attached at import time — library callers own their logging config |
-| Structured output | Operation log entries carry: timestamp, operation type, anchor length, payload length, resolved token count, outcome, error type if any |
-| Retained evidence | Every API encode/decode call produces a retained log entry queryable by callers |
-| Severity filtering | Callers can request only `error`+ events or full `debug` traces |
-| API reporting endpoints | `/log`, `/log/export`, or equivalent — exact shape TBD in scoping session |
-| Storage layer | Not selected — append-only structured log file, SQLite, or equivalent |
-| Auth/transport scope | Not settled — see invariant 5 DEFERRED status above |
+| Requirement             | Detail                                                                                                                                  |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Tiered logging          | `debug`, `info`, `warning`, `error`, `critical` — all five levels used deliberately                                                     |
+| Default level           | `warning` for widget and library import; `info` for API server; `debug` available via CLI                                               |
+| CLI control             | `blindtag --log-level debug` raises verbosity for any subcommand except widget                                                          |
+| Library import safety   | No handler attached at import time — library callers own their logging config                                                           |
+| Structured output       | Operation log entries carry: timestamp, operation type, anchor length, payload length, resolved token count, outcome, error type if any |
+| Retained evidence       | Every API encode/decode call produces a retained log entry queryable by callers                                                         |
+| Severity filtering      | Callers can request only `error`+ events or full `debug` traces                                                                         |
+| API reporting endpoints | `/log`, `/log/export`, or equivalent — exact shape TBD in scoping session                                                               |
+| Storage layer           | Not selected — append-only structured log file, SQLite, or equivalent                                                                   |
+| Auth/transport scope    | Not settled — see invariant 5 DEFERRED status above                                                                                     |
 
 The logging hook reservation (logger namespace, no handler at import, `_configure_logging` in CLI) is implemented in Pass C. The full structured handler, retention, and reporting endpoints are implemented in Pass J.
 
@@ -1110,16 +1109,16 @@ The logging hook reservation (logger namespace, no handler at import, `_configur
 
 ### Preserved design decisions (deferred, not discarded)
 
-| Decision | Choice | Rationale |
-|---|---|---|
-| Tray icon | `assets/images/blindtag_thumbnail_basic.png` | Confirmed present; thumbnail variant is correct size for tray |
-| Process model | Single process, not a daemon/service | Qt clipboard signal requires a user-session message loop; services have no clipboard access |
-| Widget-in-tray | Same process, `BlindTagWindow` held live | Instant open, shared library state, zero IPC surface |
-| Auto-start method | `winreg HKCU\...\Run` (Windows); deferred macOS/Linux | stdlib `winreg`, no installer needed, user-session only |
-| Self-detection guard | Skip toast if widget is visible and frontmost | Simple boolean check; eliminates noise on encode without timing heuristics |
-| Close behavior | Widget close hides (not destroys) when `_tray_mode = True` | Keeps window reusable from tray without re-instantiation |
-| Entry point | `blindtag-tray = "blindtag.tray:run_tray"` in `pyproject.toml` | New script, no conflict with widget path |
-| Platform scope | Windows primary; macOS/Linux deferred | Auto-start is platform-specific; Qt tray works cross-platform but autostart deferred |
+| Decision             | Choice                                                         | Rationale                                                                                   |
+| -------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Tray icon            | `assets/images/blindtag_thumbnail_basic.png`                   | Confirmed present; thumbnail variant is correct size for tray                               |
+| Process model        | Single process, not a daemon/service                           | Qt clipboard signal requires a user-session message loop; services have no clipboard access |
+| Widget-in-tray       | Same process, `BlindTagWindow` held live                       | Instant open, shared library state, zero IPC surface                                        |
+| Auto-start method    | `winreg HKCU\...\Run` (Windows); deferred macOS/Linux          | stdlib `winreg`, no installer needed, user-session only                                     |
+| Self-detection guard | Skip toast if widget is visible and frontmost                  | Simple boolean check; eliminates noise on encode without timing heuristics                  |
+| Close behavior       | Widget close hides (not destroys) when `_tray_mode = True`     | Keeps window reusable from tray without re-instantiation                                    |
+| Entry point          | `blindtag-tray = "blindtag.tray:run_tray"` in `pyproject.toml` | New script, no conflict with widget path                                                    |
+| Platform scope       | Windows primary; macOS/Linux deferred                          | Auto-start is platform-specific; Qt tray works cross-platform but autostart deferred        |
 
 ### Preserved test scope (for when this pass is activated)
 
@@ -1133,20 +1132,20 @@ No secrets. No network. `HKCU` registry write is user-authorized opt-in only. Al
 
 ## Sign-off Readiness
 
-| Gate | Status |
-|------|--------|
-| Code review | Done (this document) |
-| Test suite review | Done — 5 gaps identified |
-| Security alignment | Done — 2 gaps flagged |
-| Calamum config | DONE — baseline established Pass D |
-| CI pipeline | DONE — GitHub Actions wired Pass A |
-| Force push authorization | Pending joediggidyyy |
-| Pass K plan | LOCKED — aesthetic alignment, glow button, taskbar icon; execute before Pass I |
-| Pass I plan | LOCKED — widget-based background posture; execute after Pass K gate |
-| Tray process (§10) | DEFERRED — preserved for future pass after Pass I ships |
-| Pass M plan | LOCKED — bounded implementation plan aligned to Polymath + Calamum contracts |
-| Pass N plan | LOCKED — corrective widget closure pass for terminal-free launch, hidden notification, and top-toggle parity |
-| Pass J plan | PLACEHOLDER — scope definition after Pass N gate |
+| Gate                     | Status                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Code review              | Done (this document)                                                                                         |
+| Test suite review        | Done — 5 gaps identified                                                                                     |
+| Security alignment       | Done — 2 gaps flagged                                                                                        |
+| Calamum config           | DONE — baseline established Pass D                                                                           |
+| CI pipeline              | DONE — GitHub Actions wired Pass A                                                                           |
+| Force push authorization | Pending joediggidyyy                                                                                         |
+| Pass K plan              | LOCKED — aesthetic alignment, glow button, taskbar icon; execute before Pass I                               |
+| Pass I plan              | LOCKED — widget-based background posture; execute after Pass K gate                                          |
+| Tray process (§10)       | DEFERRED — preserved for future pass after Pass I ships                                                      |
+| Pass M plan              | LOCKED — bounded implementation plan aligned to Polymath + Calamum contracts                                 |
+| Pass N plan              | LOCKED — corrective widget closure pass for terminal-free launch, hidden notification, and top-toggle parity |
+| Pass J plan              | PLACEHOLDER — scope definition after Pass N gate                                                             |
 
 **Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass N (widget closure corrections) → Pass J (logging).
 

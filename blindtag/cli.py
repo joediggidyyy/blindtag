@@ -1,13 +1,16 @@
 """
 blindtag.cli — Unified CLI root for the BlindTag steganographic toolkit.
 
-Top-level import budget: argparse, sys, json only.
+Top-level import budget: argparse, json, os, shutil, subprocess, sys only.
 PySide6, fastapi, uvicorn, blindtag.api, and blindtag.widget are lazy-imported
 inside their respective handlers to keep --help and --version instantaneous
 and to prevent GUI toolkit initialisation on encode/decode calls.
 """
 import argparse
 import json
+import os
+import shutil
+import subprocess
 import sys
 from typing import List, Optional
 
@@ -32,7 +35,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "  blindtag encode 'Meeting notes' 'CONFIDENTIAL'\n"
             "  blindtag decode '<tagged text>'\n"
             "  blindtag strip '<tagged text>'\n"
-            "  blindtag api --port 8080"
+            "  blindtag api --port 8080\n"
+            "  blindtag widget"
         ),
     )
     parser.add_argument(
@@ -129,6 +133,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Uvicorn log verbosity (default: info).",
     )
 
+    # --- widget ---
+    subparsers.add_parser(
+        "widget",
+        help="Launch the BlindTag widget.",
+        description=(
+            "Launch the BlindTag widget through the supported compatibility "
+            "CLI surface."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  blindtag widget\n"
+            "  blindtag-widget"
+        ),
+    )
+
     return parser
 
 
@@ -208,6 +228,45 @@ def _handle_api(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_widget_launcher() -> Optional[str]:
+    executable_dir = os.path.dirname(sys.executable)
+    for launcher_name in ("blindtag-widget.exe", "blindtag-widget"):
+        candidate = os.path.join(executable_dir, launcher_name)
+        if os.path.isfile(candidate):
+            return candidate
+
+    return shutil.which("blindtag-widget")
+
+
+def _launch_widget_process() -> int:
+    launcher = _resolve_widget_launcher()
+    if launcher is None:
+        try:
+            from blindtag.widget import run_widget  # lazy import
+        except ImportError as exc:
+            print(
+                f"blindtag widget: could not import widget dependencies — {exc}",
+                file=sys.stderr,
+            )
+            return 1
+
+        run_widget()
+        return 0
+
+    try:
+        subprocess.Popen([launcher])
+    except OSError as exc:
+        print(f"blindtag widget: could not launch widget — {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+def _handle_widget(args: argparse.Namespace) -> int:
+    del args
+    return _launch_widget_process()
+
+
 # ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
@@ -217,6 +276,7 @@ _HANDLERS = {
     "decode": _handle_decode,
     "strip": _handle_strip,
     "api": _handle_api,
+    "widget": _handle_widget,
 }
 
 

@@ -199,19 +199,16 @@ class TestEmojiFlyout:
                  if len(b.text()) > 0 and b.text() != "Edit library  ⚙"]
         assert len(cells) == len(entries)
 
-    def test_click_inserts_glyph(self, qapp) -> None:
-        """Clicking a cell passes the raw glyph to on_select; hidden payload untouched."""
+    def test_click_inserts_codepoint_token(self, qapp) -> None:
+        """Clicking a cell should populate box 1 with a U+XXXX token."""
+        from blindtag.widget import BlindTagWindow
+
         lib = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
         first_entry = lib.load()[0]
-        flyout = self._make_flyout(qapp)
-
-        from PySide6.QtWidgets import QPushButton
-        cells = [b for b in flyout.findChildren(QPushButton)
-                 if len(b.text()) > 0 and b.text() != "Edit library  ⚙"]
-        cells[0].click()
-
-        # on_select received the raw glyph (not an alias string)
-        assert self._last_received == first_entry["emoji"]
+        win = BlindTagWindow()
+        win._insert_emoji(first_entry["emoji"])
+        assert win._anchor_input.toPlainText() == "U+1F600"
+        win.close()
 
 
 # =============================================================================
@@ -533,12 +530,26 @@ class TestActionButtonCleanup:
         from blindtag.widget import BlindTagWindow
         return BlindTagWindow()
 
-    def test_encode_panel_has_only_encode_and_copy_action(self, qapp) -> None:
+    def test_encode_panel_has_only_encode_action(self, qapp) -> None:
         win = self._make_window()
         buttons = [b.text() for b in win._encode_panel.findChildren(type(win._btn_encode))]
-        assert "Encode & Copy" in buttons
-        assert "Encode" not in buttons
+        assert "Encode" in buttons
+        assert "Encode & Copy" not in buttons
         assert "⬡  Obfuscate & Copy" not in buttons
+        win.close()
+
+    def test_encode_keeps_code_message_and_outputs_glyph_payload(self, qapp) -> None:
+        from blindtag.core import encode
+
+        win = self._make_window()
+        win._anchor_input.setPlainText("U+1F512")
+        win._hidden_input.setPlainText("i love you")
+
+        win._do_encode()
+
+        assert win._anchor_input.toPlainText() == "U+1F512"
+        assert win._hidden_input.toPlainText() == "i love you"
+        assert win._encode_output.toPlainText() == encode("🔒", "i love you")
         win.close()
 
     def test_decode_panel_has_only_decode_action(self, qapp) -> None:

@@ -167,21 +167,21 @@ subparsers = parser.add_subparsers(dest="command", required=True)
 
 Subparsers:
 
-| name | positional args | flags |
-|---|---|---|
-| `encode` | `anchor` (str), `payload` (str) | `--out {text,json}` default `text` |
-| `decode` | `text` (str, may be `-`) | `--out {text,json}` default `text` |
-| `strip` | `text` (str, may be `-`) | `--out {text,json}` default `text` |
-| `api` | none | `--host`, `--port`, `--reload`, `--log-level` |
-| `widget` | none | none |
+| name     | positional args                 | flags                                         |
+| -------- | ------------------------------- | --------------------------------------------- |
+| `encode` | `anchor` (str), `payload` (str) | `--out {text,json}` default `text`            |
+| `decode` | `text` (str, may be `-`)        | `--out {text,json}` default `text`            |
+| `strip`  | `text` (str, may be `-`)        | `--out {text,json}` default `text`            |
+| `api`    | none                            | `--host`, `--port`, `--reload`, `--log-level` |
+| `widget` | none                            | none                                          |
 
 ### 3.3 Exit code contract (locked, non-negotiable)
 
-| Code | Condition |
-|---|---|
-| 0 | Success; `decode`/`strip` emit nothing and exit 0 when input is clean |
-| 1 | Domain error (`InvalidPayloadError`, `DecodingError`, startup failure) |
-| 2 | Argparse usage error (argparse default behavior — do not override) |
+| Code | Condition                                                              |
+| ---- | ---------------------------------------------------------------------- |
+| 0    | Success; `decode`/`strip` emit nothing and exit 0 when input is clean  |
+| 1    | Domain error (`InvalidPayloadError`, `DecodingError`, startup failure) |
+| 2    | Argparse usage error (argparse default behavior — do not override)     |
 
 `sys.exit(1)` on domain errors; `sys.exit(0)` on clean miss in `decode`.
 
@@ -442,15 +442,15 @@ These must be verified true before the final commit in Step 7.
 
 These items are explicitly out of scope and must not be implemented during this pass:
 
-| Item | Reason |
-|---|---|
-| `X-Request-Id` API response header | Planned for a separate API hardening pass |
-| `X-Content-Type-Options` / `X-Frame-Options` headers | Same |
-| `tests/test_widget.py` | Deferred; widget tests require separate planning |
-| Rate limiting on API | Accepted risk (localhost-only); documented in SECURITY.md |
-| `ruff` / `mypy` config in `pyproject.toml` | Separate tooling-config pass |
-| `blindtag check` subcommand or any subcommand not in CLI_SCHEMA.md | Not in schema; requires re-lock |
-| Any new runtime dependency | Prohibited by dependency policy without explicit authorization |
+| Item                                                               | Reason                                                         |
+| ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `X-Request-Id` API response header                                 | Planned for a separate API hardening pass                      |
+| `X-Content-Type-Options` / `X-Frame-Options` headers               | Same                                                           |
+| `tests/test_widget.py`                                             | Deferred; widget tests require separate planning               |
+| Rate limiting on API                                               | Accepted risk (localhost-only); documented in SECURITY.md      |
+| `ruff` / `mypy` config in `pyproject.toml`                         | Separate tooling-config pass                                   |
+| `blindtag check` subcommand or any subcommand not in CLI_SCHEMA.md | Not in schema; requires re-lock                                |
+| Any new runtime dependency                                         | Prohibited by dependency policy without explicit authorization |
 
 ---
 
