@@ -378,7 +378,7 @@ def _toggle_active_style() -> str:
     return (
         f"QPushButton {{"
         f"background-color: #1c2d3d; color: {C_TEXT}; "
-        f"border: 1px solid {C_LINE}; border-radius: 4px; padding: 6px 18px;"
+        f"border: 1px solid {C_LINE}; border-radius: 4px; padding: 6px 12px;"
         f"}}"
     )
 
@@ -388,7 +388,7 @@ def _toggle_inactive_style() -> str:
     return (
         f"QPushButton {{"
         f"background-color: transparent; color: {C_MUTED}; "
-        f"border: 1px solid transparent; border-radius: 4px; padding: 6px 18px;"
+        f"border: 1px solid transparent; border-radius: 4px; padding: 6px 12px;"
         f"}}"
         f"QPushButton:hover {{ color: {C_TEXT}; }}"
     )
@@ -988,11 +988,13 @@ class BlindTagWindow(QMainWindow):
         layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(6)
 
-        self._btn_encode = QPushButton("  Encode  ")
+        self._btn_encode = QPushButton("Encode")
+        self._btn_encode.setFixedWidth(92)
         self._btn_encode.clicked.connect(self._show_encode)
         layout.addWidget(self._btn_encode)
 
-        self._btn_decode = QPushButton("  Decode  ")
+        self._btn_decode = QPushButton("Decode")
+        self._btn_decode.setFixedWidth(92)
         self._btn_decode.clicked.connect(self._show_decode)
         layout.addWidget(self._btn_decode)
 

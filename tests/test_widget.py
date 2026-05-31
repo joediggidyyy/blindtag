@@ -24,6 +24,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import blindtag.notification as notification_module
 from blindtag.notification import NotificationWidget, NOTIFY_MARGIN_PX
 from blindtag.widget import (
     EmojiLibrary,
@@ -325,6 +326,25 @@ class TestNotificationWidget:
         widget.show_for("hello world", persistent=True)
         assert not widget._timer.isActive()
 
+    def test_target_screen_prefers_cursor_screen(self, qapp, monkeypatch) -> None:
+        widget = self._make()
+        cursor_screen = object()
+        monkeypatch.setattr(notification_module.QCursor, "pos", lambda: MagicMock())
+        monkeypatch.setattr(notification_module.QGuiApplication, "screenAt", lambda point: cursor_screen)
+        monkeypatch.setattr(notification_module.QGuiApplication, "primaryScreen", lambda: object())
+        assert widget._target_screen() is cursor_screen
+
+    def test_target_screen_falls_back_to_main_window_screen(self, qapp, monkeypatch) -> None:
+        main_win = MagicMock()
+        fallback_screen = object()
+        main_win.windowHandle.return_value = None
+        main_win.screen.return_value = fallback_screen
+        widget = NotificationWidget(main_win, NOTIFY_DURATION_MS)
+        monkeypatch.setattr(notification_module.QCursor, "pos", lambda: MagicMock())
+        monkeypatch.setattr(notification_module.QGuiApplication, "screenAt", lambda point: None)
+        monkeypatch.setattr(notification_module.QGuiApplication, "primaryScreen", lambda: object())
+        assert widget._target_screen() is fallback_screen
+
     def test_body_click_shows_main_win(self, qapp) -> None:
         mock_win = MagicMock()
         widget = NotificationWidget(mock_win, NOTIFY_DURATION_MS)
@@ -504,6 +524,14 @@ class TestActionButtonCleanup:
         buttons = [b.text() for b in win._decode_panel.findChildren(type(win._btn_decode))]
         assert buttons.count("Decode") >= 1
         assert "⬇  Paste & Decode" not in buttons
+        win.close()
+
+    def test_mode_toggle_buttons_match_narrow_tab_contract(self, qapp) -> None:
+        win = self._make_window()
+        assert win._btn_encode.text() == "Encode"
+        assert win._btn_decode.text() == "Decode"
+        assert win._btn_encode.width() == 92
+        assert win._btn_decode.width() == 92
         win.close()
 
 

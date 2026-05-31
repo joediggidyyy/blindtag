@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QCursor, QGuiApplication
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -49,6 +49,8 @@ class NotificationWidget(QWidget):
         self._main_win = main_win
         self._duration_ms = duration_ms
         self._persistent = False
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setFocusPolicy(Qt.NoFocus)
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.hide)
@@ -109,8 +111,45 @@ class NotificationWidget(QWidget):
     # Positioning
     # ------------------------------------------------------------------
 
+    def _target_screen(self):
+        """Return the best screen for the notification popup."""
+        try:
+            screen = QGuiApplication.screenAt(QCursor.pos())
+        except Exception:
+            screen = None
+        if screen is not None:
+            return screen
+
+        window_handle = None
+        window_handle_getter = getattr(self._main_win, "windowHandle", None)
+        if callable(window_handle_getter):
+            try:
+                window_handle = window_handle_getter()
+            except Exception:
+                window_handle = None
+        if window_handle is not None:
+            handle_screen_getter = getattr(window_handle, "screen", None)
+            if callable(handle_screen_getter):
+                try:
+                    screen = handle_screen_getter()
+                except Exception:
+                    screen = None
+                if screen is not None:
+                    return screen
+
+        main_screen_getter = getattr(self._main_win, "screen", None)
+        if callable(main_screen_getter):
+            try:
+                screen = main_screen_getter()
+            except Exception:
+                screen = None
+            if screen is not None:
+                return screen
+
+        return QGuiApplication.primaryScreen()
+
     def _reposition(self) -> None:
-        screen = QGuiApplication.primaryScreen()
+        screen = self._target_screen()
         if screen is None:
             return
         geo = screen.availableGeometry()
