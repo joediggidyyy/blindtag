@@ -53,6 +53,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `_LibraryEditorPanel` — fourth stack panel; per-entry rows with glyph, active alias, codes pick list, label, delete; add-entry form; writes to `assets/emoji_library_default.json`
 - `tests/test_widget.py`: 15 tests passing (9 `TestEmojiLibrary` + 3 `TestGuidancePanel` + 3 `TestEmojiFlyout`)
 
+**Pass K** — COMPLETE (commit `1108b8f`, calamum `20260531T040957Z-blindtag-all`, `decision: go`, 147/147):
+- Full palette migration from warm charcoal to cool-navy ecosystem tokens: `C_BG`, `C_SECONDARY`, `C_SURFACE`, `C_ACCENT`, `C_ACCENT_H`, `C_TEXT`, `C_MUTED`, `C_SUCCESS`, `C_WARNING`, `C_ERROR` updated to match polymath palette
+- New `C_LINE = "#263546"` token added; all 8 hardcoded `#303030` occurrences replaced
+- `_btn_primary_style`: `border: none` → `border: 1px solid {C_ACCENT}`; text color set to dark navy for contrast on cyan background
+- `_btn_secondary_style`, `_toggle_inactive_style`: hardcoded hover colors replaced with `C_LINE`-derived values
+- New helpers `_clip_watch_active_style()` / `_clip_watch_inactive_style()`: 2px brand-cyan border glow when active; muted idle state
+- `QCheckBox` ("Clip Watch") replaced by checkable `QPushButton` with `toggled` signal; `_watcher_btn` replaces `_watcher_chk` in all callsites
+- `run_widget()`: `app.setWindowIcon()` added using `assets/images/blindtag_thumbnail_basic.png` for correct frameless-window taskbar presence
+- `QCheckBox` removed from PySide6.QtWidgets import block
+- Docstring Visual Identity section and Panel Layout diagram updated to reflect new tokens and button notation
+
 **Pass H** — COMPLETE (commit `d2415ca`, calamum `20260531T020332Z-blindtag-all`, `decision: go`):
 - `_resolve_anchor_tokens(text, library)` — new module-level pure function; resolves `U+XXXX` tokens to Unicode chars (with invalid codepoint / surrogate pass-through safety) and `:alias:` tokens to glyphs via library lookup; bare uppercase excluded to prevent natural-language collisions; headless-testable with no Qt dependency
 - `_EmojiFlyout._pick`: passes raw emoji glyph to `on_select` callback (was alias string)
