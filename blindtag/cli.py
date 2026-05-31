@@ -9,7 +9,7 @@ and to prevent GUI toolkit initialisation on encode/decode calls.
 import argparse
 import json
 import sys
-from typing import List, NoReturn, Optional
+from typing import List, Optional
 
 from blindtag import __version__
 from blindtag.core import decode, encode, strip_plane14
@@ -32,8 +32,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  blindtag encode 'Meeting notes' 'CONFIDENTIAL'\n"
             "  blindtag decode '<tagged text>'\n"
             "  blindtag strip '<tagged text>'\n"
-            "  blindtag api --port 8080\n"
-            "  blindtag widget"
+            "  blindtag api --port 8080"
         ),
     )
     parser.add_argument(
@@ -130,18 +129,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Uvicorn log verbosity (default: info).",
     )
 
-    # --- widget ---
-    subparsers.add_parser(
-        "widget",
-        help="Launch the BlindTag desktop widget.",
-        description="Open the BlindTag clipboard observer widget (requires a display server).",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Examples:\n"
-            "  blindtag widget"
-        ),
-    )
-
     return parser
 
 
@@ -221,17 +208,6 @@ def _handle_api(args: argparse.Namespace) -> int:
     return 0
 
 
-def _handle_widget(args: argparse.Namespace) -> int:
-    try:
-        from blindtag.widget import run_widget  # lazy import
-    except ImportError as exc:
-        print(f"blindtag widget: could not import widget dependencies — {exc}", file=sys.stderr)
-        return 1
-
-    run_widget()
-    return 0
-
-
 # ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
@@ -241,7 +217,6 @@ _HANDLERS = {
     "decode": _handle_decode,
     "strip": _handle_strip,
     "api": _handle_api,
-    "widget": _handle_widget,
 }
 
 
@@ -264,8 +239,24 @@ def _api_shim() -> None:
 
 def _widget_shim() -> None:
     """
-    Entry point for the `blindtag-widget` console script.
-    Reconstructs sys.argv with 'widget' prepended and delegates to main().
+    Entry point for the `blindtag-widget` GUI script.
+    Launches the widget directly so the supported widget surface remains
+    terminal-free and decoupled from the root CLI parser.
     """
-    sys.argv = ["blindtag", "widget"] + sys.argv[1:]
-    main()
+    if len(sys.argv) > 1:
+        print(
+            "blindtag-widget: no arguments are supported; launch the widget directly.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    try:
+        from blindtag.widget import run_widget  # lazy import
+    except ImportError as exc:
+        print(
+            f"blindtag-widget: could not import widget dependencies — {exc}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    run_widget()

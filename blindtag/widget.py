@@ -378,7 +378,7 @@ def _toggle_active_style() -> str:
     return (
         f"QPushButton {{"
         f"background-color: #1c2d3d; color: {C_TEXT}; "
-        f"border: 1px solid {C_LINE}; border-radius: 4px; padding: 6px 12px;"
+        f"border: 1px solid {C_LINE}; border-radius: 4px; padding: 6px 8px;"
         f"}}"
     )
 
@@ -388,7 +388,7 @@ def _toggle_inactive_style() -> str:
     return (
         f"QPushButton {{"
         f"background-color: transparent; color: {C_MUTED}; "
-        f"border: 1px solid transparent; border-radius: 4px; padding: 6px 12px;"
+        f"border: 1px solid transparent; border-radius: 4px; padding: 6px 8px;"
         f"}}"
         f"QPushButton:hover {{ color: {C_TEXT}; }}"
     )
@@ -986,15 +986,15 @@ class BlindTagWindow(QMainWindow):
         strip.setStyleSheet(f"background-color: {C_SECONDARY};")
         layout = QHBoxLayout(strip)
         layout.setContentsMargins(14, 8, 14, 8)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
         self._btn_encode = QPushButton("Encode")
-        self._btn_encode.setFixedWidth(92)
+        self._btn_encode.setFixedSize(78, 30)
         self._btn_encode.clicked.connect(self._show_encode)
         layout.addWidget(self._btn_encode)
 
         self._btn_decode = QPushButton("Decode")
-        self._btn_decode.setFixedWidth(92)
+        self._btn_decode.setFixedSize(78, 30)
         self._btn_decode.clicked.connect(self._show_decode)
         layout.addWidget(self._btn_decode)
 
@@ -1374,7 +1374,7 @@ class BlindTagWindow(QMainWindow):
 
         if self._posture == "background":
             # Window is hidden — deliver persistent corner notification.
-            self._bg_notif.show_for(preview, persistent=True)
+            self._ensure_bg_notification().show_for(preview, persistent=True)
             return
 
         # Foreground path — raise window and show inline banner.
@@ -1415,6 +1415,28 @@ class BlindTagWindow(QMainWindow):
             self._notify_widget.hide()
             self._notify_widget.deleteLater()
             self._notify_widget = None
+
+    def _ensure_bg_notification(self) -> NotificationWidget:
+        bg_notif = getattr(self, "_bg_notif", None)
+        if bg_notif is None:
+            self._bg_notif = NotificationWidget(self, NOTIFY_DURATION_MS)
+            return self._bg_notif
+
+        try:
+            bg_notif.isVisible()
+        except RuntimeError:
+            self._bg_notif = NotificationWidget(self, NOTIFY_DURATION_MS)
+
+        return self._bg_notif
+
+    def _hide_background_notification(self) -> None:
+        bg_notif = getattr(self, "_bg_notif", None)
+        if bg_notif is None:
+            return
+        try:
+            bg_notif.hide()
+        except RuntimeError:
+            self._bg_notif = None
 
     # =========================================================================
     # Status bar
@@ -1457,7 +1479,7 @@ class BlindTagWindow(QMainWindow):
     def showEvent(self, event) -> None:  # type: ignore[override]
         """Restore foreground posture whenever the window becomes visible."""
         self._posture = "foreground"
-        self._bg_notif.hide()
+        self._hide_background_notification()
         super().showEvent(event)
 
     def _hide_to_background(self) -> None:
@@ -1466,7 +1488,7 @@ class BlindTagWindow(QMainWindow):
         self.hide()
 
     def closeEvent(self, event) -> None:
-        self._bg_notif.hide()
+        self._hide_background_notification()
         self._stop_watcher()
         super().closeEvent(event)
 

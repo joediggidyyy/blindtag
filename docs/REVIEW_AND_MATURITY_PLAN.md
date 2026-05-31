@@ -12,10 +12,32 @@
 > **A pass is not complete until ORACL has personally launched the application from the normal user path, observed it running, and confirmed the expected changes are visible.**
 
 - **User launch path** = `blindtag-widget.exe` (the installed console-script / gui-script shim in `.venv-core\Scripts\`)
+- **Requirement:** widget launch must be terminal-free. This is not just a handoff-test preference; it is a product requirement.
 - After any `pyproject.toml` entry-point change, `pip install -e .` must be run before the live test to regenerate shims
 - The gate clears only when: shim type is verified → widget launches with no terminal → new UI/behavior is visually confirmed
 - Calamum `decision: go` is a necessary condition but not sufficient — it covers automated tests only, not the live launch path
 - This rule applies to every pass that modifies `widget.py`, entry points, or install configuration
+
+### 2026-05-31 follow-up evidence addendum
+
+**Evidence reviewed this pass:**
+- Operator screenshot showing launch from `blindtag widget` inside an activated terminal
+- Operator screenshot showing top toggle buttons still visually wider than the requested mock target
+- Operator screenshot showing no corner notification and a close-path traceback at `blindtag/widget.py:1468`
+- Current installed entry points from `.venv-core\Scripts\`: `blindtag.exe` and `blindtag-widget.exe` both present
+- Current package config: `pyproject.toml` defines `blindtag` under `[project.scripts]` and `blindtag-widget` under `[project.gui-scripts]`
+
+**Verified interpretation:**
+- `blindtag widget` was the CLI subcommand routed through `blindtag.exe`; that duplicate route is now retired from the supported root CLI surface.
+- `blindtag-widget.exe` remains the GUI-script handoff surface and the only compliant terminal-free widget launch path.
+- The requirement itself is broader than the handoff lane: widget launch is expected to be terminal-free. Any widget route that keeps a terminal attached is a noncompliant route, not an acceptable steady-state surface.
+
+**Current follow-up verdict:**
+- Terminal-open behavior in the screenshot was explained by the launch surface used, not by a failed GUI-script registration.
+- That did **not** make the terminal-attached widget route acceptable, and Pass N removes that duplicate route from the supported root CLI surface.
+- The 92px toggle-width adjustment landed in code but did **not** satisfy the visual target; treat that edit as insufficient, not absent.
+- Hidden-notification delivery remains unproven in live use. The last fix improved screen targeting and non-activating popup behavior, but the operator still did not observe the notification. This remains an open implementation gap.
+- The close-path traceback at `blindtag/widget.py:1468` indicates an additional runtime issue in the window close lane that was not covered by the last automated tests.
 
 ---
 
@@ -515,7 +537,7 @@ No change. No new entry point.
 | 6 | **Package reinstall** | `pip install -e .` in `.venv-core` | Required after Pass L `pyproject.toml` change moved `blindtag-widget` to `[project.gui-scripts]`; regenerates `blindtag-widget.exe` shim as `pythonw`-backed |
 | 7 | **Live visual test** | Launch `blindtag-widget`, observe: no terminal, Hide button present, background posture + corner notification fire | After (6); must be run and observed before lane closeout |
 
-**Status (commit `c9cbb9b`):** Steps 1–5 + Gate complete. Steps 6–7 complete — `pip install -e .` run, shim confirmed `pythonw.exe`-backed, widget launched live from user path (PID 8656), no terminal window, Pass I changes active.
+**Status (revised 2026-05-31):** Steps 1–5 + Gate complete. The installed GUI shim lane (`blindtag-widget.exe`) remains the only valid no-terminal handoff surface. Follow-up operator evidence showed a retest from `blindtag widget` (console surface), which correctly kept a terminal open. Hidden-notification live behavior remains unresolved, and the close-path traceback at `widget.py:1468` requires a dedicated remediation pass before claiming the hidden-notification lane is fully stable.
 
 **Live test command (exact, copy-paste-ready):**
 ```powershell
@@ -525,6 +547,13 @@ Set-Location "c:\Users\joedi\Documents\CodeSentinel-1\projects\blindtag"
 ```
 
 Execute in order. Reinstall must precede widget launch to flush the stale shim.
+
+**Retired from the supported root CLI surface:**
+```powershell
+blindtag widget
+```
+
+Pass N retires that duplicate route so the supported widget launch contract remains unambiguous and terminal-free.
 
 ---
 
@@ -858,9 +887,174 @@ Where signing is configured for the environment, retained JSON artifacts should 
 
 **Handoff gate applies.** After any `widget.py` change: `pip install -e .` → launch `blindtag-widget.exe` → confirm library editor rows show 3 columns and action rows show single primary CTA each.
 
+#### M.7 — 2026-05-31 evidence review: keep / adapt / remove classification
+
+| Edit from 2026-05-31 passes | Evidence | Classification | Notes |
+|---|---|---|---|
+| `pyproject.toml` GUI-script entry for `blindtag-widget` | Present in current package config; `blindtag-widget.exe` exists in `.venv-core\Scripts\` | **KEEP** | This remains the correct no-terminal handoff surface. |
+| Pass M single-action cleanup (`Encode & Copy`, `Decode`, display-only library rows, add-row contract) | Reflected in current widget code and user screenshot | **KEEP** | These changes match the locked design lane. |
+| Persistent hidden-notification anchor concept | Still the locked UX contract | **KEEP** | The concept remains correct even though delivery is not yet reliable. |
+| Notification hardening via `WA_ShowWithoutActivating`, `NoFocus`, `_target_screen()` | Landed in `notification.py`, but operator still observed no notification | **ADAPT** | Keep as partial groundwork; do not treat as sufficient fix. Next pass must investigate why the popup never becomes visible in the real hidden workflow. |
+| Toggle-width reduction to `setFixedWidth(92)` and reduced padding | Landed in `widget.py`, but user still judged the tabs too wide | **ADAPT** | The edit stuck in code; it simply missed the visual target. |
+| Prior claim that the hidden-notification lane was complete/validated | Contradicted by current operator evidence | **REMOVE** | Replace with narrower wording: automated tests passed, but live notification delivery remains unresolved. |
+| Any wording that normalizes terminal-attached widget launch as acceptable | Conflicts with operator requirement that widget launch be terminal-free | **REMOVE** | Replace with stricter wording: terminal-attached widget routes are currently noncompliant and must be adapted or retired. |
+
 ---
 
-### Pass J — Logging and reporting infrastructure (scope definition in this session; implementation follows Pass H)
+### Pass N — Widget launch compliance, hidden-notification closure, and top-toggle visual parity
+
+**Status:** IMPLEMENTED — code changes and Calamum gate complete (`20260531T085159Z-blindtag-all`, `decision: go`); live operator re-verification of notification visibility and final visual parity still required.  
+**Dependency:** Pass M codebase is the baseline. This pass is corrective and must land before Pass J scope or any additional widget feature growth.  
+**Scope:** Close the remaining operator-observed gaps in the widget lane without broadening architecture: (1) enforce terminal-free widget launch as the only compliant widget surface, (2) make hidden notification delivery live-visible and close-stable, and (3) bring the top Encode / Decode toggle geometry into actual visual parity with the approved mock. No tray split. No new network surface. No new publishable artifact family.
+
+---
+
+#### N.1 — Evidence snapshot (2026-05-31)
+
+| Open item | Evidence | Verified state |
+|---|---|---|
+| Terminal-free widget launch is non-negotiable | Operator clarification on 2026-05-31; handoff gate at top of this document | Requirement is locked: widget launch must be terminal-free. |
+| Current widget CLI duplication creates ambiguity | `pyproject.toml` has `blindtag-widget` under `[project.gui-scripts]`; `blindtag/cli.py` previously exposed `blindtag widget` | Resolved in Pass N by retiring the duplicate CLI widget route; `blindtag-widget.exe` remains the sole compliant terminal-free widget surface. |
+| Top toggle buttons remain visually too wide | Operator screenshot after the 92px width change; current `widget.py` shows `setFixedWidth(92)` for both toggles | The last geometry tweak landed in code but did not reach the approved design target. |
+| Hidden notification still not observed live | Operator screenshot and follow-up report; current `notification.py` contains `_target_screen()`, `WA_ShowWithoutActivating`, and persistent mode | The concept and partial hardening exist, but live visibility remains unresolved. |
+| Close lane has an unclosed runtime defect | Operator screenshot includes traceback pointing at `blindtag/widget.py:1468` (`closeEvent`) | The close path is not yet proven stable in the live hidden-notification workflow. |
+
+---
+
+#### N.2 — Locked decisions
+
+1. **Terminal-free requirement stays product-level, not just handoff-level.** Any terminal-attached widget route is noncompliant until adapted or removed.
+2. **One canonical widget surface.** The compliant steady-state widget surface remains `blindtag-widget.exe`. The duplicate CLI-routed widget path must be treated as a remediation target, not as an accepted alternate UX.
+3. **No tray or OS-native notification expansion in this pass.** The custom `NotificationWidget` remains the chosen relaunch pattern; this pass is about making that pattern actually work and closing its teardown defects.
+4. **No blind numeric UI nudges.** Toggle geometry changes in this pass must be driven by approved visual target matching, not by arbitrary width reduction alone.
+5. **No evidence downgrade.** This pass must retain the current Calamum artifact family (`report_json`, `report_md`, `manifest_json`, `checksums_json`, checksum sidecars) and verify signatures/checksums where the environment is configured for signing.
+
+**Execution outcome (2026-05-31):**
+- Lane N-A implemented via surface consolidation: the root CLI `widget` subcommand was retired, and `blindtag-widget` remains the dedicated GUI surface.
+- Lane N-B implemented via notification-window flag/show-path hardening plus safe recreation/teardown handling for the background notification object.
+- Lane N-C implemented via a stricter compact-width toggle contract.
+- Focused regressions passed (`85 passed` across `tests/test_cli.py` + `tests/test_widget.py`).
+- Full Calamum gate passed: `20260531T085159Z-blindtag-all`, `decision: go`.
+- Signing env check was names-only `missing` for `CALAMUM_POLICY_SIGNING_KEY`, so checksum/manifest verification was the active integrity lane for this run.
+- Live reinstall + terminal-free widget launch executed; running `blindtag-widget.exe` process confirmed after reinstall.
+
+**Rejected alternatives for this pass:**
+- Adding tray infrastructure or platform-native notifications — out of scope and unnecessary before the current single-window route is corrected.
+- Treating `blindtag widget` as acceptable “developer-only” product behavior — rejected by operator requirement.
+- Declaring the hidden-notification lane complete based only on focused pytest — rejected by live evidence.
+
+---
+
+#### N.3 — Bounded implementation scope
+
+This pass is limited to three corrective lanes:
+
+##### Lane N-A — Widget launch compliance
+- Remove ambiguity between the compliant GUI surface and the terminal-attached widget route.
+- Choose one of two allowed end states during implementation review:
+  1. **Retire** the `blindtag widget` subcommand from the user-facing CLI surface, leaving `blindtag-widget` as the sole supported widget launcher; or
+  2. **Adapt** the `blindtag widget` route so it no longer leaves the widget attached to a terminal and truthfully satisfies the same terminal-free contract.
+- The preferred direction is **surface consolidation** (retire the duplicate CLI widget route) unless a cross-platform, evidence-clean detached invocation is shown to be simpler and equally truthful.
+
+##### Lane N-B — Hidden-notification live closure
+- Investigate why `NotificationWidget.show_for(..., persistent=True)` remains invisible in live hidden posture despite current tests.
+- Investigate the interaction between `_apply_decoded_payload(...)`, `_notify_payload(...)`, `showEvent(...)`, and `closeEvent(...)` under hidden posture.
+- Treat `closeEvent` stability as part of the same defect family because the live screenshot shows the close-path traceback adjacent to notification retest activity.
+- Preserve the current secret-safe preview rule: notification preview remains truncated and names-only.
+
+##### Lane N-C — Top-toggle parity
+- Rework the Encode / Decode toggle sizing and/or padding so the result visually matches the approved mock rather than merely being narrower than before.
+- Acceptance is visual, not just numeric: the active toggle should read as compact and centered within the strip without the oversized-pill look still visible in the 2026-05-31 screenshot.
+
+---
+
+#### N.4 — Calamum, security, and Polymath alignment contract
+
+##### Calamum test contract
+
+This pass must validate in three tiers:
+
+1. **Targeted widget regression first** — focused `tests/test_widget.py` coverage for:
+    - launch-surface behavior affected by the chosen Lane N-A decision,
+    - hidden-notification visibility / persistence / close-path stability,
+    - top-toggle geometry contract where testable without pixel overreach.
+2. **Full project gate** — `calamum test run blindtag-all --project <path>` must return `decision: go`.
+3. **Retained-artifact verification** — confirm emitted:
+    - `report.json`
+    - `report.md`
+    - `manifest.json`
+    - `checksums.json`
+    - checksum sidecars where emitted
+
+##### Calamum security / integrity contract
+
+Grounding evidence:
+- `projects/calamum/tests/test_runner.py` confirms retained-artifact families are written and bounded even under failure conditions.
+- `projects/calamum/tests/test_signing.py` confirms `sign_json_artifact(...)` / `verify_json_artifact(...)` round-trip behavior where signing is configured.
+
+Pass N must therefore follow this rule:
+
+- If the validation environment is configured for signing, JSON evidence verification is **required** and must fail closed on missing or invalid signatures/checksums.
+- If the environment is not configured for signing, the plan must still verify manifest/checksum integrity and record the reason in names-only form.
+- No new signed-call surface is introduced by Pass N, so signed-call scope remains unchanged; however, this pass must not weaken any existing evidence-verification lane.
+
+##### Polymath user-facing alignment
+
+Per `docs/guides/POLYMATH_USER_FACING_STYLE_AND_FORMATTING_EXPECTATIONS.md`, the corrected widget lane must remain:
+- calm,
+- explicit about what happened,
+- low-noise,
+- evidence-first,
+- and clear about what the operator should do next.
+
+Applied here:
+- Terminal-free widget launch removes launch ambiguity.
+- Hidden notification must truthfully answer “what happened?” and “what should happen next?” in one glance.
+- The top-toggle correction is not cosmetic fluff; it is part of the calm, low-noise, visually truthful control surface.
+
+##### Polymath security alignment
+
+Per `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`, Pass N must preserve:
+- names-only documentation,
+- fail-closed validation wording,
+- no secret-bearing previews,
+- retained evidence verification,
+- and path containment within the project + Calamum generated roots.
+
+---
+
+#### N.5 — Deliverables and execution sequence
+
+| # | Artifact | Action | Notes |
+|---|---|---|---|
+| 1 | `blindtag/cli.py` and/or `pyproject.toml` | MODIFY | Only if needed to retire or adapt the noncompliant `blindtag widget` route; keep one truthful widget launch contract. |
+| 2 | `blindtag/widget.py` | MODIFY | Notification-path remediation, close-path stabilization, and top-toggle visual parity correction. |
+| 3 | `blindtag/notification.py` | MODIFY | Only if required by the hidden-notification visibility/root-cause findings. |
+| 4 | `tests/test_widget.py` | MODIFY | Add focused regression coverage for the specific N-A / N-B / N-C acceptance boundaries. |
+| 5 | `catalog/test_definitions.json` | MODIFY | Update widget notes only if new focused coverage materially changes the lane contract. |
+| 6 | `CHANGELOG.md` | MODIFY | Record Pass N only after gate pass. |
+| **Gate A** | Focused widget pytest | RUN | Clean targeted regressions required before full Calamum gate. |
+| **Gate B** | `calamum test run blindtag-all --project <path>` | RUN | `decision: go` required before commit. |
+| **Gate C** | Evidence verification | RUN | Verify manifest/checksum family and signature verification where configured. |
+| **Gate D** | Live handoff | RUN | `pip install -e .` → launch compliant terminal-free widget surface → visually confirm notification visibility, compact toggles, and clean close behavior. |
+
+---
+
+#### N.6 — Acceptance criteria
+
+Pass N is complete only when all of the following are true:
+
+1. Widget launch is terminal-free on the supported steady-state surface, with no contradictory alternate widget route left documented as acceptable.
+2. The operator observes the hidden notification live in the actual hidden workflow, not just in tests.
+3. Closing the widget after hidden-notification activity does not emit the `closeEvent` traceback seen on 2026-05-31.
+4. The top Encode / Decode toggles visually match the approved compact target rather than the still-too-wide 92px result.
+5. Focused widget tests pass.
+6. Calamum full-project gate returns `decision: go`.
+7. Retained evidence is present and verified via checksums, and via signatures where configured.
+
+---
+
+### Pass J — Logging and reporting infrastructure (scope definition after widget closure)
 
 Blindtag's primary use model is **imported and used via API by other applications**. This pass delivers dense, structured, tiered logging and reporting. Known inputs:
 - Structured log handler attached to `logging.getLogger("blindtag")` at API/CLI startup
@@ -871,13 +1065,13 @@ Blindtag's primary use model is **imported and used via API by other application
 - Security invariants 2, 5, 7, 8 re-evaluated against final transport/auth model
 - New calamum catalog lanes for the reporting surface
 
-**Pass J begins only after Pass H calamum gate is confirmed.**
+**Pass J begins only after Pass N closes and its Calamum gate is confirmed.**
 
 ---
 
 ## Section 9 — Planned: Backend/API Reporting Layer
 
-**Status:** Placeholder — scope not yet defined. Planning deferred until Pass H (widget) is complete and gated.
+**Status:** Placeholder — scope not yet defined. Planning deferred until Pass N (widget closure) is complete and gated.
 
 **Primary use model:** blindtag is designed to be **imported and used via API by other applications** — not as a standalone personal tool. The widget is a convenience surface; the API and importable core are the canonical consumption path. This changes the logging and reporting requirements significantly: callers need dense, structured, tiered operation evidence, not casual human-readable output.
 
@@ -898,7 +1092,7 @@ Blindtag's primary use model is **imported and used via API by other application
 
 The logging hook reservation (logger namespace, no handler at import, `_configure_logging` in CLI) is implemented in Pass C. The full structured handler, retention, and reporting endpoints are implemented in Pass J.
 
-**Do not begin Pass J scope definition until joediggidyyy initiates the planning session after Pass H gate.**
+**Do not begin Pass J scope definition until joediggidyyy initiates the planning session after Pass N gate.**
 
 ---
 
@@ -951,8 +1145,9 @@ No secrets. No network. `HKCU` registry write is user-authorized opt-in only. Al
 | Pass I plan | LOCKED — widget-based background posture; execute after Pass K gate |
 | Tray process (§10) | DEFERRED — preserved for future pass after Pass I ships |
 | Pass M plan | LOCKED — bounded implementation plan aligned to Polymath + Calamum contracts |
-| Pass J plan | PLACEHOLDER — scope definition after Pass H gate |
+| Pass N plan | LOCKED — corrective widget closure pass for terminal-free launch, hidden notification, and top-toggle parity |
+| Pass J plan | PLACEHOLDER — scope definition after Pass N gate |
 
-**Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass J (logging).
+**Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass N (widget closure corrections) → Pass J (logging).
 
 Pass M is implementation-ready and bounded by the contracts in M.4–M.6.

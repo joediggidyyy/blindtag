@@ -210,10 +210,27 @@ class TestApiShim:
 # ---------------------------------------------------------------------------
 
 class TestWidgetShim:
-    def test_widget_shim_delegates_to_cli(self):
-        result = _run_shim("_widget_shim", "--help")
+    def test_widget_shim_launches_widget_directly(self):
+        script = (
+            "import blindtag.widget; "
+            "blindtag.widget.run_widget = lambda: print('WIDGET_SHIM_OK'); "
+            "from blindtag.cli import _widget_shim; "
+            "_widget_shim()"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=_ENV_UTF8,
+        )
         assert result.returncode == 0
-        assert "widget" in result.stdout.lower()
+        assert "WIDGET_SHIM_OK" in result.stdout
+
+    def test_widget_shim_rejects_arguments(self):
+        result = _run_shim("_widget_shim", "--help")
+        assert result.returncode == 2
+        assert "no arguments are supported" in result.stderr.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +263,12 @@ class TestHelpPages:
         assert result.returncode == 0
         assert result.stdout.strip() != ""
 
-    def test_widget_help_exits_zero(self):
+    def test_widget_subcommand_removed_from_root_cli(self):
         result = _run("widget", "--help")
+        assert result.returncode == 2
+        assert "invalid choice" in result.stderr.lower()
+
+    def test_root_help_does_not_list_widget_subcommand(self):
+        result = _run("--help")
         assert result.returncode == 0
-        assert result.stdout.strip() != ""
+        assert "{encode,decode,strip,api}" in result.stdout

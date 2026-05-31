@@ -44,7 +44,10 @@ class NotificationWidget(QWidget):
     def __init__(self, main_win: "QMainWindow", duration_ms: int) -> None:
         super().__init__(
             None,
-            Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint,
+            Qt.Window
+            | Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+            | Qt.WindowDoesNotAcceptFocus,
         )
         self._main_win = main_win
         self._duration_ms = duration_ms
@@ -104,8 +107,9 @@ class NotificationWidget(QWidget):
             self._timer.stop()
         else:
             self._timer.start(self._duration_ms)
-        self.show()
+        self.showNormal()
         self.raise_()
+        self.update()
 
     # ------------------------------------------------------------------
     # Positioning

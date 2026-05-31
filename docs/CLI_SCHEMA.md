@@ -153,21 +153,22 @@ No sub-subcommands; there is only one API operation (serve). Nesting a `serve` t
 
 ---
 
-### `blindtag widget`
+### `blindtag-widget`
 
-Launch the desktop observer widget. Equivalent to the current `blindtag-widget` entry point.
+Launch the desktop observer widget through the dedicated terminal-free GUI surface.
 
 ```bash
-blindtag widget
+blindtag-widget
 ```
 
-No flags; the widget is self-contained. Always runs at `warning` log level — the global `--log-level` flag has no effect on widget startup. Platform notes from `run_widget.py` still apply.
+No flags; the widget is self-contained. The root `blindtag` CLI does **not** expose a `widget` subcommand anymore because widget launch is required to remain terminal-free.
 
 **Exit codes**
 | Code | Meaning |
 |---|---|
 | 0 | Clean close |
 | 1 | Import / display error |
+| 2 | Unsupported arguments passed to `blindtag-widget` |
 
 ---
 
@@ -177,10 +178,12 @@ No flags; the widget is self-contained. Always runs at `warning` log level — t
 [project.scripts]
 blindtag        = "blindtag.cli:main"          # new — unified root
 blindtag-api    = "blindtag.cli:_api_shim"     # compat alias → delegates to cli
-blindtag-widget = "blindtag.cli:_widget_shim"  # compat alias → delegates to cli
+
+[project.gui-scripts]
+blindtag-widget = "blindtag.cli:_widget_shim"  # dedicated terminal-free widget surface
 ```
 
-`_api_shim` and `_widget_shim` are one-line wrappers that call `main(["api", ...])` and `main(["widget"])` respectively, preserving backward compatibility.
+`_api_shim` delegates into the root CLI. `_widget_shim` is intentionally separate and launches the widget directly so the supported widget surface remains terminal-free.
 
 ---
 

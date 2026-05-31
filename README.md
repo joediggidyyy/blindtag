@@ -1,6 +1,7 @@
 # ⬡ BlindTag
 
-<p align="center">
+<p
+="center">,k.$$\\\\\\\\\\\\\7\
   <img src="assets/images/blindtag_logo.png" alt="BlindTag" width="180">
 </p>
 
@@ -254,8 +255,16 @@ Requests exceeding these limits receive **HTTP 422** before any codec logic runs
 ## Module C — Desktop Widget (`blindtag/widget.py`)
 
 ```bash
-python run_widget.py
+blindtag-widget
 ```
+
+### Launch surfaces
+
+| Surface | Intended use | Terminal behavior |
+|---|---|---|
+| `blindtag-widget` / `blindtag-widget.exe` | Required widget launch surface | **No terminal** — this is the required widget behavior |
+| `blindtag widget` | Retired CLI-routed widget path | **No longer supported** — the duplicate terminal-attached widget route has been removed from the root CLI |
+| `python run_widget.py` | Direct source-tree developer launch | **Currently keeps a terminal attached** — useful only for development/debug, not acceptable as final widget UX |
 
 ### Hotkeys
 
@@ -269,14 +278,16 @@ python run_widget.py
 
 ### Clipboard Watcher
 
-When enabled, a background daemon thread polls the system clipboard every **800 ms**. If new clipboard content contains a Plane 14 payload, the widget:
+When enabled, BlindTag listens to Qt clipboard change events on the GUI thread. If new clipboard content contains a Plane 14 payload, the widget:
 
 1. Switches to the Decode panel automatically
 2. Populates raw input and extracted payload fields
-3. Displays a floating notification banner (auto-dismisses after 4.5 s)
-4. Brings the window to the foreground
+3. Shows an inline detection banner when the window is already foregrounded
+4. When hidden in background posture, attempts to show a persistent corner relaunch notification until dismissed or replaced
 
-No data leaves the local machine. The watcher thread is a Python `daemon` thread — it exits cleanly when the widget closes.
+No data leaves the local machine. Clipboard detection stays inside the Qt event loop and shuts down with the widget.
+
+**Current note (2026-05-31):** the hidden-notification concept is implemented and covered by focused widget tests, but live operator evidence still shows an unresolved delivery gap in the hidden workflow pending live re-verification. Terminal-free widget launch is a non-negotiable requirement. `blindtag-widget.exe` is the required launch surface, and the duplicate CLI widget route has been retired from the supported root CLI.
 
 ---
 

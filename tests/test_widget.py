@@ -443,6 +443,28 @@ class TestBackgroundPosture:
         win.close()
         assert not win._watcher_active
 
+    def test_close_event_tolerates_deleted_notification_widget(self, qapp) -> None:
+        from PySide6.QtCore import QCoreApplication
+
+        win = self._make_window()
+        win._bg_notif.deleteLater()
+        for _ in range(20):
+            QCoreApplication.processEvents()
+        win.close()
+
+    def test_background_notification_is_recreated_if_deleted(self, qapp) -> None:
+        from PySide6.QtCore import QCoreApplication
+
+        win = self._make_window()
+        win._bg_notif.deleteLater()
+        for _ in range(20):
+            QCoreApplication.processEvents()
+        win._posture = "background"
+        win._notify_payload("secret", "raw")
+        assert win._bg_notif is not None
+        assert win._bg_notif.isVisible()
+        win.close()
+
 
 class TestLibraryEditorColumns:
     def _make_panel(self, tmp_path):
@@ -530,8 +552,8 @@ class TestActionButtonCleanup:
         win = self._make_window()
         assert win._btn_encode.text() == "Encode"
         assert win._btn_decode.text() == "Decode"
-        assert win._btn_encode.width() == 92
-        assert win._btn_decode.width() == 92
+        assert win._btn_encode.width() == 78
+        assert win._btn_decode.width() == 78
         win.close()
 
 

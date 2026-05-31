@@ -99,6 +99,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `tests/test_widget.py`: added helper coverage for glyph/code parsing and display, library-editor add-row behavior, single-action button contract, and persistent hidden notification anchor behavior
 - `catalog/test_definitions.json`: `blindtag-widget` notes updated to reflect Pass M coverage
 
+**Pass N** — IMPLEMENTED (calamum `20260531T085159Z-blindtag-all`, `decision: go`; live operator re-verification pending):
+- Root CLI widget subcommand retired; terminal-free widget launch remains the dedicated `blindtag-widget` GUI surface only
+- `blindtag.cli._widget_shim` no longer delegates through the root parser; it launches the widget directly and rejects unsupported arguments
+- Hidden notification window flags and show path hardened for Windows visibility (`Qt.WindowDoesNotAcceptFocus`, direct top-level launch path, `showNormal()`)
+- Background-notification lifecycle now recreates deleted notification instances safely and tolerates notification teardown during the window close path
+- Encode / Decode top toggles compacted further to a stricter width contract after the earlier 92px attempt missed the approved visual target
+- `tests/test_cli.py`: root CLI retirement of `widget` subcommand covered; widget shim direct-launch and argument-rejection contract covered
+- `tests/test_widget.py`: added coverage for deleted notification recreation / close-path tolerance and updated compact top-toggle geometry contract
+- `README.md`, `docs/CLI_SCHEMA.md`, and `catalog/test_definitions.json` updated to reflect the dedicated terminal-free widget surface and new Pass N regression boundaries
+
 **Pass H** — COMPLETE (commit `d2415ca`, calamum `20260531T020332Z-blindtag-all`, `decision: go`):
 - `_resolve_anchor_tokens(text, library)` — new module-level pure function; resolves `U+XXXX` tokens to Unicode chars (with invalid codepoint / surrogate pass-through safety) and `:alias:` tokens to glyphs via library lookup; bare uppercase excluded to prevent natural-language collisions; headless-testable with no Qt dependency
 - `_EmojiFlyout._pick`: passes raw emoji glyph to `on_select` callback (was alias string)

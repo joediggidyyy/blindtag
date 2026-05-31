@@ -66,7 +66,7 @@
     {
       "id": "blindtag-cli",
       "title": "BlindTag Unified CLI",
-      "summary": "Tests for the blindtag root CLI entry point: encode, decode, strip subcommands (text + JSON output, stdin piping, exit codes), api shim delegation, widget shim delegation, --version flag.",
+      "summary": "Tests for the blindtag root CLI entry point: encode, decode, strip subcommands (text + JSON output, stdin piping, exit codes), api shim delegation, dedicated widget shim launch contract, --version flag.",
       "status": "active",
       "category": "integration",
       "selector_policy": "exact-name-only",
@@ -87,7 +87,7 @@
             "command": ["{python}", "-m", "pytest", "tests/test_cli.py", "-v", "--tb=short"],
             "expected_artifacts": ["stdout", "stderr"],
             "evidence_requirements": ["stdout_capture", "stderr_capture"],
-            "notes": "CLI subcommand contracts, exit codes, JSON output, stdin piping, compat shims."
+            "notes": "CLI subcommand contracts, exit codes, JSON output, stdin piping, API shim delegation, root-CLI retirement of the widget subcommand, and dedicated widget-shim launch contract."
           }
         ],
         "sandbox_test": [],
@@ -118,7 +118,7 @@
             "command": ["{python}", "-m", "pytest", "tests/test_widget.py", "-v", "--tb=short"],
             "expected_artifacts": ["stdout", "stderr"],
             "evidence_requirements": ["stdout_capture", "stderr_capture"],
-            "notes": "EmojiLibrary schema, validation, add/remove, alias selection (headless). GuidancePanel and EmojiFlyout smokes via QApplication fixture. TestEncodeResolution: U+XXXX and :alias: resolve pipeline, passthrough for invalid/unknown tokens (headless). TestGlyphCodeParsing: glyph/code parse and derived U+ display helpers. TestNotificationWidget: construction, show_for label, auto-dismiss only when nonpersistent, persistent hidden-anchor mode, body-click callback, hover pause, close-button dismiss-only (all headless with mocked main_win). TestBackgroundPosture: _posture default, Hide button triggers hide+posture, hidden posture routes to persistent NotificationWidget anchor, showEvent resets posture to foreground, closeEvent stops watcher in both postures. TestLibraryEditorColumns: display-only rows show glyph/code, alias, label; add row accepts glyph or Unicode input, rejects alias as glyph/code source. TestActionButtonCleanup: encode panel exposes only Encode & Copy, decode panel exposes only Decode. TestHiddenNotificationAnchor: persistent hidden notification relaunches, dismisses, and replaces correctly."
+            "notes": "EmojiLibrary schema, validation, add/remove, alias selection (headless). GuidancePanel and EmojiFlyout smokes via QApplication fixture. TestEncodeResolution: U+XXXX and :alias: resolve pipeline, passthrough for invalid/unknown tokens (headless). TestGlyphCodeParsing: glyph/code parse and derived U+ display helpers. TestNotificationWidget: construction, show_for label, auto-dismiss only when nonpersistent, persistent hidden-anchor mode, screen targeting fallbacks, body-click callback, hover pause, close-button dismiss-only (all headless with mocked main_win). TestBackgroundPosture: _posture default, Hide button triggers hide+posture, hidden posture routes to persistent NotificationWidget anchor, deleted notification widgets are recreated safely, showEvent resets posture to foreground, closeEvent stops watcher in both postures and tolerates notification teardown. TestLibraryEditorColumns: display-only rows show glyph/code, alias, label; add row accepts glyph or Unicode input, rejects alias as glyph/code source. TestActionButtonCleanup: encode panel exposes only Encode & Copy, decode panel exposes only Decode, and top toggles follow the compact-width contract. TestHiddenNotificationAnchor: persistent hidden notification relaunches, dismisses, and replaces correctly."
           }
         ],
         "sandbox_test": [],
