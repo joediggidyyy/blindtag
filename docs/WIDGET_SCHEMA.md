@@ -1,6 +1,6 @@
 # BlindTag Widget Schema
 
-**Status**: Revised — Pass G corrections applied (guidance readability + emoji insertion field + library editor row simplification + dual-input add form)
+**Status**: Revised — Pass H design targets applied (format selector, anchor-only emoji insert, encode resolution pipeline)
 **Precondition**: Pass C complete (`e134dab`); all 25 CLI tests passing; calamum go/pass
 **Execution authority**: This document is the design contract. An implementation checklist will be created before Pass D begins.
 **Scope**: Three surfaces — in-product guidance panel, emoji alias selector flyout, and emoji library editor
@@ -75,14 +75,34 @@ Each card is a `QWidget` with:
 | Card | Caret | Expanded guidance |
 |------|-------|-------------------|
 | **Anchor text** | ✓ | The visible text your payload will be hidden inside. Any readable string works. The receiver sees only this text unless they decode it. |
-| **Hidden payload** | ✓ | The secret message to embed. Must be printable characters (letters, numbers, punctuation, spaces). Max ~9,000 characters. When you pick an emoji from the selector, its alias (e.g. `:smile:`) is automatically appended here alongside the glyph in the anchor text. |
-| **Emoji aliases** | ✓ | Emojis cannot be embedded directly in the hidden payload (they are not printable ASCII). The emoji selector inserts the glyph into your visible anchor text and simultaneously appends the matching alias into the payload — so the receiver decodes the alias and knows which emoji was intended. You can edit the library to add your own. |
+| **Hidden payload** | ✓ | Your secret message — plain text only (letters, numbers, punctuation, spaces). Max ~9,000 characters. Nothing from the emoji selector goes here; this field is exclusively for the message you want to hide. |
+| **Emoji format** | ✓ | The format selector (in the panel header) controls how a picked emoji is represented in the anchor text: `Glyph` inserts the raw emoji character (🗑️), `Unicode` inserts the codepoint notation (`U+1F5D1`), `Alias` inserts the short code (`:trash:`). All three produce valid anchor cover text. At encode time the widget resolves any format tokens to actual glyph characters before embedding the payload. |
 | **Obfuscate & Copy** | ✓ | Runs encode and immediately copies the result to your clipboard. The output looks identical to your anchor text — the payload is invisible. |
 | **Clip Watch** | ✓ | Monitors your clipboard. When you copy text that contains a hidden payload, BlindTag automatically detects and shows it. No data leaves your machine. |
 
 ---
 
-## Surface 2 — Emoji alias selector
+## Surface 2 — Emoji selector + format selector
+
+### Format selector
+
+A compact format selector is added to the **toggle strip** on the right side, adjacent to the `Clip Watch` checkbox:
+
+```
+[Encode] [Decode]                  [Glyph ▾]  □ Clip Watch
+```
+
+The selector is a minimal `QPushButton` that cycles through three modes on click (or exposes a small popup). It is always visible when the encode panel is active.
+
+| Mode | Label | Inserts into anchor | Example |
+|------|-------|--------------------|---------|
+| `Glyph` | `Glyph` | Raw emoji character | `🗑️` |
+| `Unicode` | `Unicode` | Codepoint notation | `U+1F5D1` (multi-codepoint: `U+1F5D1 U+FE0F`) |
+| `Alias` | `Alias` | Active alias from library | `:trash:` |
+
+**Canonical Unicode format rule**: uppercase `U+XXXX`, minimum 4 hex digits, no padding beyond natural length (e.g. `U+1F5D1`, not `U+0001F5D1`). Separate codepoints with a single space.
+
+**Default**: `Glyph`. State is ephemeral (in-memory per-session); resets to `Glyph` on restart.
 
 ### Trigger placement
 
@@ -92,9 +112,7 @@ In `_build_encode_panel()`, the `ANCHOR TEXT` section label row gains an inline 
 ANCHOR TEXT  ·  visible cover                    ☺
 ```
 
-The `☺` button (`26×26`, `_btn_ghost_style()`) opens the flyout. It is anchored to the button position so the flyout appears just below the label row, left-aligned with the anchor textbox.
-
-> **Trigger placement rationale**: The glyph is visible content — it belongs in the anchor text field. Placing the `☺` trigger on the ANCHOR TEXT row correctly signals that clicking picks something to embed in the visible text.
+The `☺` button (`26×26`, `_btn_ghost_style()`) opens the flyout. It is anchored to the button position so the flyout appears just below the label row.
 
 ### Flyout layout
 
@@ -112,14 +130,27 @@ The `☺` button (`26×26`, `_btn_ghost_style()`) opens the flyout. It is anchor
 - The flyout is a `QFrame` with `StyledPanel` shape, not a separate window
 - Width: `240px`, height auto-expands to fit grid (max `220px`, scrollable)
 - Background: `C_SURFACE` (`#252525`), border `1px solid #303030`
-- Each cell shows **only the emoji glyph** — no alias text in the flyout
-- Clicking a cell performs a **dual-field insert**:
-  - Appends the emoji **glyph** to `_anchor_input` (anchor text, visible cover)
-  - Appends the entry's active **alias** string to `_hidden_input` (hidden payload)
-  - Then closes the flyout
-- Dual insert rationale: the glyph is what the reader sees; the alias is what the decoder recovers. A single click wires both sides of the round-trip. The user does not need to make two separate field decisions.
-- The flyout dismisses on click-outside (mouse press event filter on the parent window) or on `Escape`
+- Each cell shows **only the emoji glyph** — no format text in the flyout cells
+- Clicking a cell performs a **single-field insert** into `_anchor_input` only:
+  - `Glyph` mode → appends raw emoji character
+  - `Unicode` mode → appends `U+XXXX` notation string
+  - `Alias` mode → appends active alias string (e.g. `:trash:`)
+  - **Nothing is written to `_hidden_input`** — the hidden payload field is untouched
+- The flyout dismisses on click-outside or `Escape`
 - `Edit library` link at the bottom opens the library editor panel
+
+### Encode resolution pipeline
+
+Before calling `core.encode(anchor, payload)`, the widget resolves format tokens in `_anchor_input`:
+
+1. **Unicode tokens**: scan for `U+[0-9A-Fa-f]{4,6}( U+[0-9A-Fa-f]{4,6})*` → resolve to the corresponding Unicode character(s)
+2. **Alias tokens**: scan for `:[a-z0-9_]+:` or bare uppercase keywords — look up in library → resolve to the emoji glyph
+3. **Glyph / plain text**: no transformation needed; passed through as-is
+4. Unresolvable tokens (no match in library, invalid codepoint) pass through unchanged — they are valid visible cover text
+
+The resolved string is passed to `encode()`. The OUTPUT field displays the result (the glyph with invisible Plane 14 payload).
+
+> **Pipeline rationale**: Decoupling format from encoding means the decoder requires no format knowledge — it extracts Plane 14 tags regardless of what the anchor looks like. The format is a sender-side UX choice only.
 
 ### Grid layout
 
@@ -129,7 +160,7 @@ Entries are laid out in a `QGridLayout`, 6 columns. Each cell is a `QPushButton`
 [ 😀 ]  [ 😂 ]  [ ❤️ ]  [ 👍 ]  [ 👎 ]  [ 🔥 ]
 ```
 
-Button style: `_btn_ghost_style()` with `font-size: 18pt`, `padding: 6px`, fixed `44×44` size. System font renders the glyph; no emoji library dependency required.
+Button style: `_btn_ghost_style()` with `font-size: 18pt`, `padding: 6px`, fixed `44×44` size.
 
 ---
 
@@ -149,13 +180,13 @@ A fourth panel added to `_stack` (after encode, decode). The toggle strip `[Enco
 ┌──────────────────────────────────────────┐
 │ ⬡ BlindTag  ?                    ─   ✕  │
 ├──────────────────────────────────────────┤
-│ [Encode] [Decode]             □ Clip...  │
+│ [Encode] [Decode]    [Glyph ▾]  □ Clip  │
 ├──────────────────────────────────────────┤
 │  ←  Emoji Library                        │
 │  ─────────────────────────────────────   │
-│  😀   smile       [✕]                   │
-│  😂   laughing    [✕]                   │
-│  ❤️   heart       [✕]                   │
+│  😀  🔵 U+1F600    smile       [✕]      │
+│  😂  🔵 U+1F602    laughing    [✕]      │
+│  ❤️  🔵 U+2764…    heart       [✕]      │
 │  ...                                     │
 │  ─────────────────────────────────────   │
 │  + Add entry                             │
@@ -163,13 +194,16 @@ A fourth panel added to `_stack` (after encode, decode). The toggle strip `[Enco
 └──────────────────────────────────────────┘
 ```
 
-> **Row design rationale**: The code/alias string is internal encoding plumbing — not part of the browse experience. Rows show only what the user cares about: the glyph and the human label. The active alias is exposed as a tooltip on the glyph for users who need to inspect the encoding value; it is not a separate column.
+> **Row design**: Each row shows the glyph, a format-value column (dynamic — updates when the format selector changes), and the human label. The format-value column shows exactly what will be inserted into ANCHOR TEXT if the user picks that emoji from the flyout. This makes the library editor double as a format preview surface.
+
+> **Format column header**: matches the active format selector label (`Unicode` / `Alias` / `Glyph`).
 
 **Per-row columns:**
 
 | Column | Content |
 |--------|---------|
-| Glyph | Emoji rendered at `18pt`; non-editable. Tooltip on hover shows the active alias (e.g. `:thumbsdown:`) for users who need to inspect the encoding value. |
+| Glyph | Emoji rendered at `18pt`; non-editable. |
+| Format value | The representation that would be inserted into ANCHOR TEXT if this emoji is picked. Derives from the active format selector — updates live when the selector changes. `Glyph` mode shows the raw glyph (same as the first column), `Unicode` shows `U+XXXX` notation, `Alias` shows `:alias:`. Uses `C_MUTED` at `9pt`. |
 | Label | `C_MUTED` display label |
 | Delete `✕` | Removes the entire entry; no confirmation dialog |
 
@@ -225,7 +259,7 @@ A fourth panel added to `_stack` (after encode, decode). The toggle strip `[Enco
 | Field | Type | Description |
 |-------|------|-------------|
 | `emoji` | string | Unicode emoji glyph; display only |
-| `alias` | string | The active code — this is what gets appended to `_hidden_input` (payload) on flyout click; must be a member of `codes` |
+| `alias` | string | The active code — used as the `Alias` format value when inserting into ANCHOR TEXT; must be a member of `codes` |
 | `codes` | string[] | Full pick list of available codes for this emoji; each must match `^[ -~]+$` (printable ASCII) |
 | `label` | string | Human-readable name; shown in editor only, never encoded |
 
@@ -272,7 +306,7 @@ No new Python modules. All new UI classes live in `widget.py`.
 |------------|-------|
 | `TestEmojiLibrary` (in `tests/test_widget.py`) | Load `emoji_library_default.json`; verify schema (all entries have `emoji`, `alias`, `codes`, `label`); `alias` is member of `codes`; all codes pass ASCII validation; add/remove entry; add/remove code; set active alias |
 | `TestGuidancePanel` (in `tests/test_widget.py`) | Panel opens/closes, card count matches schema, card text not empty |
-| `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking cell appends glyph to anchor field AND active alias to payload field (dual-field insert) |
+| `TestEmojiFlyout` (in `tests/test_widget.py`) | Flyout cell count matches library length; clicking cell inserts format-value into anchor field only (single-field insert); hidden payload field is not modified; Unicode mode inserts `U+XXXX` notation; Alias mode inserts alias string; Glyph mode inserts raw glyph |
 
 These are part of the `tests/test_widget.py` work already in Planned. The emoji/guidance implementation should ship as part of the same pass that delivers `test_widget.py`.
 
