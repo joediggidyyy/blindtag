@@ -109,7 +109,7 @@ Reference: `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`
 | 2. Environment is the keyring | N/A | No secrets required at runtime currently; document if API auth is added |
 | 3. Names-only documentation | PASS | No values exposed anywhere |
 | 4. Agents do not read secret material | PASS | No vault or secret reads |
-| 5. Fail closed on trust ambiguity | PARTIAL | API has no auth layer — document this as an explicit design decision (localhost transport only) in SECURITY.md |
+| 5. Fail closed on trust ambiguity | DEFERRED | API has no auth layer. **Framing this as a permanent "localhost-only" design decision is premature** — a reporting layer is planned post-widget that will require revisiting API transport scope, auth, and exposure model. Do NOT lock localhost-only into SECURITY.md until the reporting layer scope is defined. |
 | 6. Protected secret stores — integrity controls | N/A | No secret store |
 | 7. Sensitive state changes require authorization | N/A | No state mutations; document for future API auth additions |
 | 8. Retained evidence must be verifiable | GAP | API responses carry no checksums or request IDs; plan `X-Request-Id` header |
@@ -117,6 +117,8 @@ Reference: `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`
 | 10. Security messaging useful and secret-safe | PASS | Error messages describe constraint without leaking values |
 
 **Additional gap:** No `.env.example` file. Polymath standard requires one even when the current version has no secrets, to establish the pattern for future additions.
+
+**Scope note:** The reporting layer planned in Section 9 will introduce new invariant touchpoints (auth, retained evidence, signed responses). Security invariants 2, 5, 7, and 8 must be re-evaluated against that layer's design before any final SECURITY.md settlement.
 
 ---
 
@@ -212,6 +214,38 @@ Current `CHANGELOG.md` has only the `[1.0.0]` release entry. Per Keep-a-Changelo
 1. `git push --force origin main` (joediggidyyy sign-off required)
 2. Verify GitHub Actions CI passes on arrival
 
+### Pass I — Backend/API reporting layer (scope TBD, plan after Pass H)
+blindtag requires the full reporting capabilities expected of a calamum product. Scope definition deferred until Pass H (widget) is complete and gated. This pass will cover at minimum:
+- Structured operation history: encode/decode events written as retained evidence artifacts
+- API reporting endpoints (retrieve operation log, export evidence)
+- Storage layer selection (SQLite, JSON line-log, or equivalent)
+- Auth/transport scope decision: localhost-only vs. broader exposure, with corresponding invariant 5 settlement
+- New calamum catalog lanes covering the reporting surface
+- Re-evaluation of security invariants 2, 5, 7, 8 against the reporting layer design
+
+**Do not begin Pass I scope definition until joediggidyyy initiates the planning session after Pass H gate.**
+
+---
+
+## Section 9 — Planned: Backend/API Reporting Layer
+
+**Status:** Placeholder — scope not yet defined. Planning deferred until Pass H (widget) is complete and gated.
+
+blindtag's intended use scope requires the full reporting capabilities expected of a calamum product. This is not a personal steganography tool with a fixed localhost perimeter — the backend and API will carry a reporting surface whose transport, auth, and evidence model are not yet determined.
+
+The following are known planning inputs, not decisions:
+
+| Topic | Planning input |
+|-------|---------------|
+| Operation history | Every encode/decode event should produce a retained evidence artifact (calamum-style report_json) |
+| API reporting endpoints | Endpoints to retrieve operation log and export evidence are expected |
+| Storage layer | Not selected — SQLite, append-only JSON log, or equivalent all viable |
+| Transport/auth scope | Not settled — localhost-only is provisional; broader exposure may be required |
+| Security invariants | Invariants 2, 5, 7, 8 must be re-evaluated against final reporting layer design |
+| Calamum catalog | New lanes will be needed for the reporting surface |
+
+No implementation decisions should be made or locked for this layer until the scoping session.
+
 ---
 
 ## Sign-off Readiness
@@ -226,3 +260,5 @@ Current `CHANGELOG.md` has only the `[1.0.0]` release entry. Per Keep-a-Changelo
 | Force push authorization | Pending joediggidyyy |
 
 **Next authorized action:** Pass A (document & config updates, no code changes).
+
+**Post-Pass-H next action:** Initiate Pass I scope definition session with joediggidyyy.
