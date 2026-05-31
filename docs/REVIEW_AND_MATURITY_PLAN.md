@@ -215,6 +215,246 @@ Current `CHANGELOG.md` has only the `[1.0.0]` release entry. Per Keep-a-Changelo
 1. `git push --force origin main` (joediggidyyy sign-off required)
 2. Verify GitHub Actions CI passes on arrival
 
+### Pass I — System tray background service (`blindtag-tray`)
+
+**Status:** Planned. Authorized for planning; implementation begins after Pass H calamum gate is confirmed.
+
+**Scope:** Add a standalone `blindtag-tray` entry point that runs the Plane 14 clipboard watcher as a persistent system-tray background process — no visible window at launch, OS-native toast notifications on payload detection, right-click context menu, and optional auto-start on login. The full `BlindTagWindow` widget is available on demand from the tray menu and runs in the same process.
+
+#### I.1 — Architecture
+
+```
+blindtag-tray  →  blindtag.tray:run_tray()
+                      │
+                      ├── QApplication (windowless at launch)
+                      ├── QSystemTrayIcon
+                      │     ├── icon: assets/images/blindtag_thumbnail_basic.png
+                      │     ├── tooltip: "BlindTag — Clip Watcher"
+                      │     └── context menu (see §I.3)
+                      ├── clipboard hook: QApplication.clipboard().dataChanged
+                      │     └── decode(text) → showMessage() on hit
+                      └── BlindTagWindow (instantiated once; hidden until opened)
+```
+
+Single process. The tray and the widget share one `QApplication` instance. The `BlindTagWindow` is created at startup and hidden; opening it from the tray calls `show()` / `raise_()` / `activateWindow()`.
+
+#### I.2 — New file: `blindtag/tray.py`
+
+Approximate structure (~130 lines):
+
+```python
+# blindtag/tray.py
+"""
+blindtag.tray
+=============
+System-tray background watcher — no main window at launch.
+"""
+import sys
+import logging
+from pathlib import Path
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+from PySide6.QtGui import QIcon
+from .core import decode
+from .exceptions import InvalidPayloadError
+
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "images"
+_ICON_PATH   = _ASSETS_DIR / "blindtag_thumbnail_basic.png"
+_log = logging.getLogger("blindtag.tray")
+
+class BlindTagTray:
+    def __init__(self, app: QApplication) -> None:
+        # ... QSystemTrayIcon + context menu + clipboard hook
+    def _start_watcher(self) -> None:
+        app.clipboard().dataChanged.connect(self._on_clipboard_change)
+    def _on_clipboard_change(self) -> None:
+        # same decode() pattern as widget — all exceptions swallowed
+    def _notify(self, message: str) -> None:
+        # QSystemTrayIcon.showMessage() — OS-native toast
+    def _open_widget(self) -> None:
+        # lazy-import BlindTagWindow, show/raise
+    def _toggle_autostart(self, enabled: bool) -> None:
+        # Windows: winreg; macOS: launchd plist; Linux: ~/.config/autostart
+    def stop(self) -> None:
+        app.clipboard().dataChanged.disconnect(self._on_clipboard_change)
+
+def run_tray() -> None:
+    app = QApplication.instance() or QApplication(sys.argv)
+    tray = BlindTagTray(app)
+    tray.show()
+    sys.exit(app.exec())
+```
+
+#### I.3 — Tray context menu
+
+| Menu item | Action |
+|---|---|
+| `Open BlindTag` | `show()` / `raise_()` / `activateWindow()` on `BlindTagWindow` |
+| `Pause Watcher` / `Resume Watcher` | toggle `dataChanged` connection; icon dims/brightens |
+| `Auto-start on login` (checkable) | write/remove registry key (Windows), launchd plist (macOS), `.desktop` (Linux) |
+| `Quit` | `_stop_watcher()`, `app.quit()` |
+
+Double-clicking the tray icon opens the widget (same as `Open BlindTag`).
+
+#### I.4 — Auto-start implementation
+
+**Windows (primary target):**
+```python
+import winreg  # stdlib, Windows only
+KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+def _set_autostart_windows(enabled: bool) -> None:
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, KEY, access=winreg.KEY_SET_VALUE) as k:
+        if enabled:
+            winreg.SetValueEx(k, "BlindTag", 0, winreg.REG_SZ, f'"{sys.executable}" -m blindtag.tray')
+        else:
+            try: winreg.DeleteValue(k, "BlindTag")
+            except FileNotFoundError: pass
+```
+Wrapped in `if sys.platform == "win32"`. The registry value stores `sys.executable` (the actual interpreter path in the active venv) — this is correct for user-installed packages. Autostart state is persisted in the registry itself; no additional config file needed.
+
+**macOS:** Write/remove `~/Library/LaunchAgents/com.polymath.blindtag.plist` — out of scope for this pass; menu item hidden on non-Windows platforms unless `sys.platform == "darwin"` is explicitly extended.
+
+**Linux:** Write/remove `~/.config/autostart/blindtag.desktop` — same deferral policy.
+
+Initial delivery targets Windows only. Menu item is hidden on unsupported platforms.
+
+#### I.5 — Widget integration changes
+
+`BlindTagWindow.closeEvent` requires a one-line guard: when tray mode is active, the close button should hide the window rather than destroy it (so it can be re-opened from the tray without re-instantiating).
+
+```python
+# BlindTagWindow.closeEvent — updated
+def closeEvent(self, event) -> None:
+    self._stop_watcher()
+    if getattr(self, "_tray_mode", False):
+        event.ignore()
+        self.hide()
+        return
+    super().closeEvent(event)
+```
+
+`_tray_mode` is set by the tray at construction: `win._tray_mode = True`.
+
+#### I.6 — Self-detection guard (known interaction)
+
+When the widget's `Encode` button writes a tagged string to the clipboard, the tray watcher will immediately detect the Plane 14 payload and fire a toast — notifying the user about their own just-encoded output. This is cosmetically noisy but not harmful.
+
+**Chosen resolution:** In `BlindTagTray._on_clipboard_change`, skip notification if `BlindTagWindow` is currently visible and frontmost (`self._widget_win.isActiveWindow()`). The assumption is: if the widget is open and focused, the user already sees the encode result and does not need a toast. If the widget is hidden/backgrounded, the toast is useful.
+
+This guard is simple (one boolean check), eliminates the self-notification in the common encode workflow, and requires no timing heuristics or flags.
+
+#### I.7 — Calamum test catalog: new `blindtag-tray` definition
+
+Add to `catalog/test_definitions.json`:
+
+```json
+{
+  "id": "blindtag-tray",
+  "title": "BlindTag System Tray Background Service",
+  "summary": "Headless construction and decode-path tests for BlindTagTray. Verifies QSystemTrayIcon instantiation, clipboard decode hook fires on payload-bearing text, notification suppressed when watcher paused, autostart registry toggle (Windows mocked).",
+  "status": "active",
+  "category": "integration",
+  "selector_policy": "exact-name-only",
+  "profiles": ["default", "release"],
+  "tags": ["smoke", "tray"],
+  "policy_flags": ["deterministic-output", "local-only", "release-gate"],
+  "evidence_requirements": ["stdout_capture", "stderr_capture", "report_json"],
+  "default_lanes": ["pytest"],
+  "metadata": {
+    "module": "blindtag.tray",
+    "test_file": "tests/test_tray.py"
+  },
+  "lanes": {
+    "pytest": [
+      {
+        "id": "tray-pytest",
+        "title": "pytest tests/test_tray.py",
+        "command": ["{python}", "-m", "pytest", "tests/test_tray.py", "-v", "--tb=short"],
+        "expected_artifacts": ["stdout", "stderr"],
+        "evidence_requirements": ["stdout_capture", "stderr_capture"],
+        "notes": "BlindTagTray construction, decode-path signal mock, pause-watcher suppression, auto-start registry mock (win32 only via unittest.mock)."
+      }
+    ],
+    "sandbox_test": [],
+    "empirical_test": []
+  }
+}
+```
+
+`blindtag-all` rollup command in the existing catalog already targets `tests/` — no change required to the rollup definition; `test_tray.py` is picked up automatically.
+
+#### I.8 — New test file: `tests/test_tray.py`
+
+| Class | Tests |
+|---|---|
+| `TestTrayConstruction` | tray instantiates without error (headless QApp fixture); icon path resolves to existing file; `_ICON_PATH` exists |
+| `TestTrayDecodeHook` | mock `QApplication.clipboard()` to return encoded text → `_on_clipboard_change()` calls `decode()` and `_notify()`; mock clipboard returning plain text → `_notify()` not called |
+| `TestTrayPause` | after `stop()`, additional clipboard signals do not call `_notify()` |
+| `TestAutoStartWindows` | mock `winreg` → `_set_autostart_windows(True)` writes correct key; `_set_autostart_windows(False)` deletes key; `FileNotFoundError` on delete is silent (skip if `sys.platform != "win32"`) |
+
+All tests are headless. No `showMessage()` call escapes to the OS — mock `QSystemTrayIcon.showMessage` in the fixture.
+
+#### I.9 — `pyproject.toml` change
+
+```toml
+[project.scripts]
+blindtag        = "blindtag.cli:main"
+blindtag-api    = "blindtag.cli:_api_shim"
+blindtag-widget = "blindtag.cli:_widget_shim"
+blindtag-tray   = "blindtag.tray:run_tray"     # ← new
+```
+
+#### I.10 — Polymath security alignment
+
+| Invariant | Status in this pass |
+|---|---|
+| 1. No secrets in source control | PASS — no credentials; only registry key name (public) |
+| 2. Environment is the keyring | N/A — no secrets at runtime |
+| 3. Names-only documentation | PASS |
+| 4. Agents do not read secret material | PASS |
+| 5. Fail closed on trust ambiguity | PASS — if icon asset missing, `QIcon` falls back gracefully; tray still functional |
+| 6. Protected stores require integrity controls | N/A |
+| 7. Sensitive state changes require explicit authorization | PASS — auto-start requires user opt-in via menu checkbox; no silent registry writes |
+| 8. Retained evidence must be verifiable | N/A — tray produces no retained evidence artifacts; calamum test run produces evidence |
+| 9. Path containment enforced | PASS — only reads from `assets/images/`; registry writes scoped to `HKCU` only |
+| 10. Security messaging useful and secret-safe | PASS — toast shows payload excerpt only (48 chars, same pattern as widget) |
+
+No new SEAM blockers introduced.
+
+#### I.11 — Polymath style alignment
+
+Toast notification content follows the operator contract (what happened / payload excerpt / next action implied by bringing up the widget). `QSystemTrayIcon.showMessage()` signature:
+```python
+tray_icon.showMessage(
+    "BlindTag",                        # title
+    f"Payload detected: {preview!r}",  # message (48 char preview)
+    QSystemTrayIcon.MessageIcon.Information,
+    3000,                              # ms display time
+)
+```
+OS controls rendering; Polymath style contract is met at the content level.
+
+#### I.12 — Out of scope for this pass
+
+- macOS launchd / Linux `.desktop` autostart (deferred — Windows only)
+- Per-app clipboard access gating on macOS sandbox distribution
+- IPC between a separately-running tray instance and a separately-running widget instance (not needed — same process)
+- Tray logging/reporting endpoints (deferred to Pass J)
+
+#### I.13 — Deliverables summary
+
+| Artifact | Action | Notes |
+|---|---|---|
+| `blindtag/tray.py` | CREATE | ~130 lines |
+| `tests/test_tray.py` | CREATE | ~60 lines, headless |
+| `catalog/test_definitions.json` | MODIFY | Add `blindtag-tray` definition |
+| `pyproject.toml` | MODIFY | Add `blindtag-tray` entry point |
+| `blindtag/widget.py` | MODIFY | `closeEvent` tray-mode guard (~5 lines) |
+| `CHANGELOG.md` | MODIFY | Pass I entry |
+
+Gate: `calamum test run blindtag-all --project <path>`, `decision: go` required before commit.
+
+---
+
 ### Pass J — Logging and reporting infrastructure (scope definition in this session; implementation follows Pass H)
 
 Blindtag's primary use model is **imported and used via API by other applications**. This pass delivers dense, structured, tiered logging and reporting. Known inputs:
@@ -257,6 +497,34 @@ The logging hook reservation (logger namespace, no handler at import, `_configur
 
 ---
 
+## Section 10 — Planned: System Tray Background Service (`blindtag-tray`)
+
+**Status:** Plan locked. Implementation authorized after Pass H gate.
+
+**Purpose:** Expose the clipboard watcher as an always-on background process that survives without the widget being open. Adds zero new dependencies beyond what is already required by the widget (PySide6 ≥ 6.8). The full implementation plan is in **Pass I** above.
+
+### Key design decisions (locked)
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Tray icon | `assets/images/blindtag_thumbnail_basic.png` | Confirmed present; thumbnail variant is correct size for tray |
+| Process model | Single process, not a daemon/service | Qt clipboard signal requires a user-session message loop; services have no clipboard access |
+| Widget-in-tray | Same process, `BlindTagWindow` held live | Instant open, shared library state, zero IPC surface |
+| Auto-start method | `winreg HKCU\...\Run` (Windows); deferred macOS/Linux | stdlib `winreg`, no installer needed, user-session only |
+| Self-detection guard | Skip toast if widget is visible and frontmost | Simple boolean check; eliminates noise on encode without timing heuristics |
+| Close behavior | Widget close hides (not destroys) when `_tray_mode = True` | Keeps window reusable from tray without re-instantiation |
+| Platform scope | Windows primary; macOS/Linux deferred | Auto-start is platform-specific; Qt tray works cross-platform but autostart deferred |
+
+### Security posture (summary)
+
+No secrets. No network. File I/O limited to reading `assets/images/blindtag_thumbnail_basic.png` (read-only) and writing one `HKCU` registry value (user-authorized opt-in, Windows only). All Polymath security invariants pass. No new SEAM blockers. See Pass I §I.10 for full invariant table.
+
+### Test scope summary
+
+`tests/test_tray.py` — headless, ~60 lines, four test classes: construction, decode hook, pause behavior, autostart registry (mocked). `blindtag-all` rollup picks up `test_tray.py` automatically via `tests/` glob.
+
+---
+
 ## Sign-off Readiness
 
 | Gate | Status |
@@ -264,10 +532,10 @@ The logging hook reservation (logger namespace, no handler at import, `_configur
 | Code review | Done (this document) |
 | Test suite review | Done — 5 gaps identified |
 | Security alignment | Done — 2 gaps flagged |
-| Calamum config | NOT YET |
-| CI pipeline | NOT YET |
+| Calamum config | DONE — baseline established Pass D |
+| CI pipeline | DONE — GitHub Actions wired Pass A |
 | Force push authorization | Pending joediggidyyy |
+| Pass I plan | LOCKED — implementation authorized after Pass H gate |
+| Pass J plan | PLACEHOLDER — scope definition after Pass H gate |
 
-**Next authorized action:** Pass A (document & config updates, no code changes).
-
-**Post-Pass-H next action:** Initiate Pass J scope definition session with joediggidyyy.
+**Post-Pass-H next action:** Execute Pass I (system tray), then initiate Pass J scope definition session with joediggidyyy.
