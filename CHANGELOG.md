@@ -89,6 +89,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `tests/test_widget.py`: added `TestNotificationWidget` (6 headless tests) and `TestBackgroundPosture` (7 tests); 147 → 160 total
 - `catalog/test_definitions.json`: `blindtag-widget` notes updated to document new test classes
 
+**Pass M** — COMPLETE (calamum `20260531T075058Z-blindtag-all`, `decision: go`):
+- Encode panel simplified to a single primary action: `Encode & Copy`; redundant standalone `Encode` button removed
+- Decode panel simplified to a single primary action: `Decode`; redundant `Paste & Decode` button removed; `Ctrl+Return` now routes directly to decode-in-place on the decode panel
+- Hidden-mode clip-watch notifications changed from ephemeral toast behavior to a persistent click-to-relaunch anchor until dismissed or replaced
+- Hidden-mode payload detection now pre-populates the decode panel before relaunch so the decoded result is already available when the window is restored
+- Emoji library editor rows converted to display-only multi-column rows showing glyph/code, alias, and label
+- Bottom add row now uses three creation-time fields only: `glyph/code`, `alias`, `label`; glyph and Unicode forms derive from each other at creation time; alias input is no longer treated as a glyph/code source
+- `tests/test_widget.py`: added helper coverage for glyph/code parsing and display, library-editor add-row behavior, single-action button contract, and persistent hidden notification anchor behavior
+- `catalog/test_definitions.json`: `blindtag-widget` notes updated to reflect Pass M coverage
+
 **Pass H** — COMPLETE (commit `d2415ca`, calamum `20260531T020332Z-blindtag-all`, `decision: go`):
 - `_resolve_anchor_tokens(text, library)` — new module-level pure function; resolves `U+XXXX` tokens to Unicode chars (with invalid codepoint / surrogate pass-through safety) and `:alias:` tokens to glyphs via library lookup; bare uppercase excluded to prevent natural-language collisions; headless-testable with no Qt dependency
 - `_EmojiFlyout._pick`: passes raw emoji glyph to `on_select` callback (was alias string)

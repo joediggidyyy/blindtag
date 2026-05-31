@@ -719,6 +719,147 @@ The target aesthetic (verified across sources):
 
 ---
 
+### Pass M — Emoji library multi-column editor & action button cleanup
+
+**Status:** LOCKED — bounded implementation plan ready.  
+**Dependency:** Pass I complete and gated. No dependency on Pass J.  
+**Scope:** Two widget-only changes — (1) library editor rows gain multi-column display with a structured add row at the bottom, (2) extra action buttons are removed so each panel has one action button. No API changes. No new files.
+
+---
+
+#### M.1 — Redundant action button removal
+
+**Locked design:** One primary CTA per panel. Both secondary buttons are removed. No behavior changes to the remaining buttons.
+
+**Current → target:**
+- Encode panel: `[ Encode ]` + `[ ⬡ Obfuscate & Copy ]` → **`[ Encode & Copy ]` only**
+- Decode panel: `[ Decode ]` + `[ ⬇ Paste & Decode ]` → **`[ Decode ]` only**
+
+**Rationale (operator-confirmed):** Clip Watch mode handles automatic decode on clipboard change. When Clip Watch is off, the user pastes into the raw input field and clicks `Decode`. The extra `Paste & Decode` button is not wanted. Same for the encode panel — the single action should be the complete path, with clearer text. Clutter is antithetical to the design culture.
+
+**Post-change layout per panel:**
+```
+Encode:  [ Encode & Copy ]   [ Clear All ]
+Decode:  [ Decode ]   [ Clear All ]
+```
+
+`Ctrl+Return` already routes to the correct primary CTA per active panel. No hotkey changes needed.
+
+**Test impact:** Remove any test asserting the presence of the removed `[ Encode ]` and `[ ⬇ Paste & Decode ]` buttons. Add/retain coverage confirming the encode panel exposes a single `Encode & Copy` action and the decode panel exposes a single `Decode` action button.
+
+---
+
+#### M.2 — Emoji library multi-column editor
+
+**Locked design contract (from mockup):** Existing rows are display rows. The only editable controls on this page live in the single add-entry row at the bottom.
+
+| Column | Content | Example |
+|--------|---------|---------|
+| Glyph / Code | Glyph plus its derived Unicode representation | `👎` / `U+1F44E` |
+| Alias | Active alias string | `:thumbsdown:` |
+| Label | Human-readable name | `thumbs down` |
+
+The glyph icon remains at the far left. The `×` remove button remains at the far right.
+
+**Current row structure (`_make_row`):**  
+`[glyph 14pt QLabel] [label QLabel] [× QPushButton]`
+
+**Target row structure:**  
+`[glyph 14pt QLabel + derived code label] [alias QLabel] [label QLabel] [× QPushButton]`
+
+**Schema:** No change required. `entry["emoji"]` remains the stored glyph, `entry["alias"]` remains the creation-time alias, and `entry["label"]` remains the human-readable label. The code value is derived from `entry["emoji"]` for display.
+
+**Add form:** The add row has exactly three fields: `glyph/code`, `alias`, `label`.
+
+- `glyph/code` accepts either a literal glyph or a Unicode form such as `U+1F44E`
+- `alias` is entered directly at creation time and becomes the local key for the record
+- `label` is the human-readable description
+
+If the user enters a glyph, the Unicode code is derived for display in the record row. If the user enters a Unicode code, the glyph is derived for storage/display in the record row. The add row must not accept `:alias:` as a substitute for glyph/code because a new record cannot be created from an alias that does not yet exist.
+
+---
+
+#### M.3 — Hidden-mode relaunch behavior (settled)
+
+| # | Gap | Options | Impact |
+|---|-----|---------|--------|
+| 1 | **Hidden-mode relaunch path when the widget is hidden** | Persistent notification window acts as the click-to-relaunch anchor until dismissed or replaced | This is settled. `NotificationWidget` becomes the explicit relaunch surface in hidden posture. Replacement rule: newest hidden notification replaces the previous one. Taskbar presence remains incidental, not the primary UX contract. |
+
+---
+
+#### M.4 — Calamum test contract
+
+Existing `blindtag-widget` test suite must pass at `decision: go`. New test coverage needed in `tests/test_widget.py`:
+
+```
+TestLibraryEditorColumns
+    test_row_shows_glyph_code_alias_label_columns
+    test_codepoint_display_derived_from_emoji_char
+    test_add_row_accepts_glyph_input_and_derives_code
+    test_add_row_accepts_unicode_input_and_derives_glyph
+    test_add_row_rejects_alias_as_glyph_code_source
+
+TestActionButtonCleanup
+    test_encode_panel_has_only_encode_and_copy_action
+    test_decode_panel_has_only_decode_action
+
+TestHiddenNotificationAnchor
+    test_hidden_notification_persists_until_dismissed_or_replaced
+    test_hidden_notification_body_restores_main_window
+    test_hidden_notification_close_only_dismisses_anchor
+    test_new_hidden_notification_replaces_previous_anchor
+```
+
+**Calamum evidence contract:** Pass M is not considered validated on `pytest` output alone. The gate must produce Calamum artifact families consistent with runner contract precedent:
+
+- `report_json`
+- `report_md`
+- `manifest_json`
+- `checksums_json`
+- checksum sidecars where emitted
+
+Where signing is configured for the environment, retained JSON artifacts should also remain verifiable under the Calamum signing surface (`sign_json_artifact` / `verify_json_artifact`). Pass M does not introduce new signed-call surfaces, but it must not weaken the existing evidence-verification lane.
+
+---
+
+#### M.5 — Polymath + Calamum alignment guardrails
+
+**Polymath user-facing alignment:**
+- Single primary action per panel satisfies the calm, low-noise, no-surprise surface rule from `docs/guides/POLYMATH_USER_FACING_STYLE_AND_FORMATTING_EXPECTATIONS.md`.
+- `Encode & Copy` is explicit about what ran and what happened.
+- `Decode` remains explicit and truthful; no implied clipboard mutation is baked into the label.
+- Hidden-mode relaunch via persistent notification answers the operator-facing question: *what should happen next?* — click the notification to reopen.
+
+**Polymath security alignment:**
+- No new secrets, credentials, or trust material.
+- No new network surface.
+- No new publishable artifact families.
+- Retained evidence remains verifiable through existing Calamum manifest/checksum/signature expectations.
+- Hidden notification preview remains truncated/secret-safe and must not expand beyond the current guarded excerpt behavior.
+
+**Project-precedent alignment:**
+- Preserve the current single-window widget architecture; no tray split in this pass.
+- Preserve the handoff gate: live launch from `blindtag-widget.exe` remains mandatory before closeout.
+- Preserve the Calamum-first validation lane: `decision: go` plus retained artifacts, then live visual confirmation.
+
+---
+
+#### M.6 — Deliverables and sequence
+
+| # | Artifact | Action | Notes |
+|---|---|---|---|
+| 1 | `blindtag/widget.py` | MODIFY | Rename the remaining encode CTA to `Encode & Copy`; remove secondary `Encode`; remove `Paste & Decode` so `Decode` is the single action; keep hidden notifications persistent while hidden until dismissed or replaced; rewrite `_make_row()` in `_LibraryEditorPanel` to 3-column display layout; update add row to `glyph/code`, `alias`, `label`; derive glyph/code pair at creation time |
+| 2 | `tests/test_widget.py` | MODIFY | Add `TestLibraryEditorColumns`, `TestActionButtonCleanup`, and `TestHiddenNotificationAnchor` |
+| 3 | `catalog/test_definitions.json` | MODIFY | Update `blindtag-widget` notes field |
+| 4 | `CHANGELOG.md` | MODIFY | After gate pass |
+| **Gate** | `calamum test run blindtag-all --project <path>` | RUN | `decision: go` required before commit; retain `report_json`, `report_md`, `manifest_json`, `checksums_json` evidence set |
+| **Evidence verify** | Verify Calamum artifacts | RUN | Confirm manifest/checksum set exists; where signing is configured, verify signed artifact path remains valid |
+| **Live handoff** | Launch installed widget | RUN | `pip install -e .` → `blindtag-widget.exe` → visually confirm persistent hidden notification anchor, single CTA per panel, and display-only library rows |
+
+**Handoff gate applies.** After any `widget.py` change: `pip install -e .` → launch `blindtag-widget.exe` → confirm library editor rows show 3 columns and action rows show single primary CTA each.
+
+---
+
 ### Pass J — Logging and reporting infrastructure (scope definition in this session; implementation follows Pass H)
 
 Blindtag's primary use model is **imported and used via API by other applications**. This pass delivers dense, structured, tiered logging and reporting. Known inputs:
@@ -809,6 +950,9 @@ No secrets. No network. `HKCU` registry write is user-authorized opt-in only. Al
 | Pass K plan | LOCKED — aesthetic alignment, glow button, taskbar icon; execute before Pass I |
 | Pass I plan | LOCKED — widget-based background posture; execute after Pass K gate |
 | Tray process (§10) | DEFERRED — preserved for future pass after Pass I ships |
+| Pass M plan | LOCKED — bounded implementation plan aligned to Polymath + Calamum contracts |
 | Pass J plan | PLACEHOLDER — scope definition after Pass H gate |
 
-**Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass J (logging).
+**Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass J (logging).
+
+Pass M is implementation-ready and bounded by the contracts in M.4–M.6.

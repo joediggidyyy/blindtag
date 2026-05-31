@@ -1,11 +1,12 @@
 """
 blindtag.notification
-=====================
-Ephemeral bottom-right corner notification for background monitoring posture.
+====================
+Bottom-right corner notification for background monitoring posture.
 
 Shown when ``BlindTagWindow`` is hidden and the clipboard watcher detects a
-payload.  Clicking the body reopens the main window; the ``×`` button
-dismisses silently.
+payload. Clicking the body reopens the main window; the ``×`` button
+dismisses silently. In persistent mode, the notification remains visible as a
+click-to-relaunch anchor until dismissed or replaced.
 """
 from __future__ import annotations
 
@@ -47,6 +48,7 @@ class NotificationWidget(QWidget):
         )
         self._main_win = main_win
         self._duration_ms = duration_ms
+        self._persistent = False
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.hide)
@@ -86,12 +88,20 @@ class NotificationWidget(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
-    def show_for(self, preview: str) -> None:
-        """Display notification with *preview* text and start auto-dismiss timer."""
+    def show_for(self, preview: str, persistent: bool = False) -> None:
+        """Display notification with *preview* text.
+
+        When *persistent* is True, the notification remains visible until the
+        user dismisses it or a later notification replaces it.
+        """
+        self._persistent = persistent
         self._label.setText(f"\u2b21  BlindTag  \u00b7  {preview}")
         self.adjustSize()
         self._reposition()
-        self._timer.start(self._duration_ms)
+        if self._persistent:
+            self._timer.stop()
+        else:
+            self._timer.start(self._duration_ms)
         self.show()
         self.raise_()
 
@@ -122,8 +132,10 @@ class NotificationWidget(QWidget):
 
     def enterEvent(self, event) -> None:  # type: ignore[override]
         """Hovering over the notification pauses auto-dismiss."""
-        self._timer.stop()
+        if not self._persistent:
+            self._timer.stop()
 
     def leaveEvent(self, event) -> None:  # type: ignore[override]
         """Leaving restarts the full auto-dismiss timer."""
-        self._timer.start(self._duration_ms)
+        if not self._persistent:
+            self._timer.start(self._duration_ms)

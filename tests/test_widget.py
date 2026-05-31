@@ -1,13 +1,17 @@
 """
 tests/test_widget.py
 ====================
-Tests for Pass D–I widget surfaces:
+Tests for Pass D–M widget surfaces:
   - TestEmojiLibrary          — headless; no QApplication needed
   - TestGuidancePanel         — requires qapp fixture (session-scoped)
   - TestEmojiFlyout           — requires qapp fixture (session-scoped)
   - TestEncodeResolution      — headless; no QApplication needed
+    - TestGlyphCodeParsing      — headless; no QApplication needed
   - TestNotificationWidget    — headless; MagicMock as main_win
   - TestBackgroundPosture     — requires qapp fixture (session-scoped)
+    - TestLibraryEditorColumns  — requires qapp fixture (session-scoped)
+    - TestActionButtonCleanup   — requires qapp fixture (session-scoped)
+    - TestHiddenNotificationAnchor — requires qapp fixture (session-scoped)
 
 Run with:
     pytest tests/test_widget.py -v
@@ -28,6 +32,9 @@ from blindtag.widget import (
     _EmojiCard,
     _EmojiFlyout,
     _GuidancePanel,
+    _LibraryEditorPanel,
+    _format_codepoints,
+    _parse_glyph_or_code,
     _resolve_anchor_tokens,
 )
 
@@ -259,6 +266,26 @@ class TestEncodeResolution:
         assert _resolve_anchor_tokens(token, lib) == token
 
 
+class TestGlyphCodeParsing:
+    def test_format_codepoints_single(self) -> None:
+        assert _format_codepoints("👎") == "U+1F44E"
+
+    def test_format_codepoints_multi(self) -> None:
+        assert _format_codepoints("❤️") == "U+2764 U+FE0F"
+
+    def test_parse_glyph_literal(self) -> None:
+        assert _parse_glyph_or_code("👎") == "👎"
+
+    def test_parse_unicode_token(self) -> None:
+        assert _parse_glyph_or_code("U+1F44E") == "👎"
+
+    def test_parse_unicode_sequence(self) -> None:
+        assert _parse_glyph_or_code("U+2764 U+FE0F") == "❤️"
+
+    def test_parse_alias_rejected(self) -> None:
+        assert _parse_glyph_or_code(":thumbsdown:") is None
+
+
 # =============================================================================
 # TestNotificationWidget — headless (MagicMock as main_win)
 # =============================================================================
@@ -291,6 +318,11 @@ class TestNotificationWidget:
         for _ in range(50):
             QCoreApplication.processEvents()
         # After timer fires, widget should be hidden (timer.timeout -> hide())
+        assert not widget._timer.isActive()
+
+    def test_persistent_show_for_does_not_start_timer(self, qapp) -> None:
+        widget = NotificationWidget(MagicMock(), duration_ms=1)
+        widget.show_for("hello world", persistent=True)
         assert not widget._timer.isActive()
 
     def test_body_click_shows_main_win(self, qapp) -> None:
@@ -364,6 +396,7 @@ class TestBackgroundPosture:
             mock_show_for.assert_called_once()
             call_arg = mock_show_for.call_args[0][0]
             assert "secret message" in call_arg or len(call_arg) <= 50
+            assert mock_show_for.call_args.kwargs["persistent"] is True
         win.close()
 
     def test_notify_payload_routes_inline_banner_in_foreground_posture(self, qapp) -> None:
@@ -379,13 +412,144 @@ class TestBackgroundPosture:
     def test_close_event_stops_watcher_in_foreground_posture(self, qapp) -> None:
         win = self._make_window()
         win._posture = "foreground"
-        win._watcher_active = True
+        win._toggle_watcher(True)
         win.close()
         assert not win._watcher_active
 
     def test_close_event_stops_watcher_in_background_posture(self, qapp) -> None:
         win = self._make_window()
         win._posture = "background"
-        win._watcher_active = True
+        win._toggle_watcher(True)
         win.close()
         assert not win._watcher_active
+
+
+class TestLibraryEditorColumns:
+    def _make_panel(self, tmp_path):
+        from PySide6.QtWidgets import QWidget
+
+        class _StubParent(QWidget):
+            def _return_from_editor(self) -> None:
+                return None
+
+        shutil.copy(_DEFAULT_LIBRARY_PATH, tmp_path / "emoji_library_default.json")
+        lib = EmojiLibrary(tmp_path / "emoji_library_default.json")
+        parent = _StubParent()
+        panel = _LibraryEditorPanel(parent, lib)  # type: ignore[arg-type]
+        panel.refresh()
+        return panel, lib
+
+    def test_row_shows_glyph_code_alias_label_columns(self, qapp, tmp_path) -> None:
+        panel, lib = self._make_panel(tmp_path)
+        row = panel._make_row(lib.load()[4])
+        labels = [lbl.text() for lbl in row.findChildren(type(panel._validation_lbl))]
+        assert "👎" in labels
+        assert "U+1F44E" in labels
+        assert ":thumbsdown:" in labels
+        assert "thumbs down" in labels
+
+    def test_codepoint_display_derived_from_emoji_char(self, qapp, tmp_path) -> None:
+        panel, lib = self._make_panel(tmp_path)
+        row = panel._make_row(lib.load()[2])
+        labels = [lbl.text() for lbl in row.findChildren(type(panel._validation_lbl))]
+        assert "U+2764 U+FE0F" in labels
+
+    def test_add_row_accepts_glyph_input_and_derives_code(self, qapp, tmp_path) -> None:
+        panel, lib = self._make_panel(tmp_path)
+        panel._add_glyph_code.setText("🧪")
+        panel._add_alias.setText(":test:")
+        panel._add_label.setText("test tube")
+        panel._do_add()
+        added = lib.load()[-1]
+        assert added["emoji"] == "🧪"
+        assert added["alias"] == ":test:"
+        assert _format_codepoints(added["emoji"]) == "U+1F9EA"
+
+    def test_add_row_accepts_unicode_input_and_derives_glyph(self, qapp, tmp_path) -> None:
+        panel, lib = self._make_panel(tmp_path)
+        panel._add_glyph_code.setText("U+1F9EA")
+        panel._add_alias.setText(":test:")
+        panel._add_label.setText("test tube")
+        panel._do_add()
+        added = lib.load()[-1]
+        assert added["emoji"] == "🧪"
+        assert added["alias"] == ":test:"
+
+    def test_add_row_rejects_alias_as_glyph_code_source(self, qapp, tmp_path) -> None:
+        panel, lib = self._make_panel(tmp_path)
+        before = len(lib.load())
+        panel._add_glyph_code.setText(":thumbsdown:")
+        panel._add_alias.setText(":test:")
+        panel._add_label.setText("test")
+        panel._do_add()
+        assert len(lib.load()) == before
+        assert "Glyph/code must be a glyph or U+XXXX token." in panel._validation_lbl.text()
+
+
+class TestActionButtonCleanup:
+    def _make_window(self):
+        from blindtag.widget import BlindTagWindow
+        return BlindTagWindow()
+
+    def test_encode_panel_has_only_encode_and_copy_action(self, qapp) -> None:
+        win = self._make_window()
+        buttons = [b.text() for b in win._encode_panel.findChildren(type(win._btn_encode))]
+        assert "Encode & Copy" in buttons
+        assert "Encode" not in buttons
+        assert "⬡  Obfuscate & Copy" not in buttons
+        win.close()
+
+    def test_decode_panel_has_only_decode_action(self, qapp) -> None:
+        win = self._make_window()
+        buttons = [b.text() for b in win._decode_panel.findChildren(type(win._btn_decode))]
+        assert buttons.count("Decode") >= 1
+        assert "⬇  Paste & Decode" not in buttons
+        win.close()
+
+
+class TestHiddenNotificationAnchor:
+    def _make_window(self):
+        from blindtag.widget import BlindTagWindow
+        return BlindTagWindow()
+
+    def test_hidden_notification_persists_until_dismissed_or_replaced(self, qapp) -> None:
+        win = self._make_window()
+        win._posture = "background"
+        win._notify_payload("secret one", "raw1")
+        assert win._bg_notif.isVisible()
+        assert not win._bg_notif._timer.isActive()
+        first_text = win._bg_notif._label.text()
+        win._notify_payload("secret two", "raw2")
+        assert win._bg_notif.isVisible()
+        assert first_text != win._bg_notif._label.text()
+        win.close()
+
+    def test_hidden_notification_body_restores_main_window(self, qapp) -> None:
+        win = self._make_window()
+        win._posture = "background"
+        win._notify_payload("secret", "raw_encoded")
+        win._bg_notif.mousePressEvent(MagicMock())
+        assert win.isVisible()
+        assert win._posture == "foreground"
+        assert win._stack.currentWidget() is win._decode_panel
+        assert win._decode_output.toPlainText() == "secret"
+        win.close()
+
+    def test_hidden_notification_close_only_dismisses_anchor(self, qapp) -> None:
+        win = self._make_window()
+        win._posture = "background"
+        win._notify_payload("secret", "raw_encoded")
+        win._bg_notif._close_btn.click()
+        assert not win._bg_notif.isVisible()
+        assert not win.isVisible()
+        win.close()
+
+    def test_new_hidden_notification_replaces_previous_anchor(self, qapp) -> None:
+        win = self._make_window()
+        win._posture = "background"
+        win._notify_payload("first secret", "raw1")
+        win._notify_payload("second secret", "raw2")
+        assert "second secret" in win._bg_notif._label.text()
+        assert win._raw_input.toPlainText() == "raw2"
+        assert win._decode_output.toPlainText() == "second secret"
+        win.close()

@@ -29,8 +29,8 @@ Panel Layout
   │  [HIDDEN PAYLOAD textbox]  (encode only) │
   │  [OUTPUT textbox]                        │
   │                                          │
-  │  [ Encode ]  [ ⬡ Obfuscate & Copy ]     │  ← action row
-  │             [ Clear All ]               │
+    │  [ Encode & Copy ]                      │  ← single action row
+    │  [ Clear All ]                          │
   ├──────────────────────────────────────────┤
   │ Status message                        ●  │  ← status bar
   └──────────────────────────────────────────┘
@@ -47,8 +47,9 @@ Clipboard Watcher
 -----------------
 When active, the Qt clipboard dataChanged signal fires on every clipboard
 update. If new content contains a Plane 14 tag payload, the widget surfaces
-a notification overlay, switches to the Decode panel, and auto-populates the
-output field. No data leaves the local machine.
+a notification surface, switches to the Decode panel, and auto-populates the
+output field. When hidden, the notification persists as a click-to-relaunch
+anchor until dismissed or replaced. No data leaves the local machine.
 
 Dependencies: PySide6 >= 6.8
 """
@@ -176,6 +177,38 @@ def _resolve_anchor_tokens(text: str, library: EmojiLibrary) -> str:
         result.append(text[i])
         i += 1
     return "".join(result)
+
+
+def _format_codepoints(text: str) -> str:
+    """Return a display string such as ``U+1F44E`` for each codepoint in *text*."""
+    if not text:
+        return ""
+    return " ".join(f"U+{ord(ch):04X}" for ch in text)
+
+
+def _parse_glyph_or_code(raw: str) -> str | None:
+    """Parse *raw* as either a literal glyph string or ``U+XXXX`` tokens."""
+    value = raw.strip()
+    if not value:
+        return None
+
+    parts = value.split()
+    if parts and all(part.upper().startswith("U+") for part in parts):
+        chars: list[str] = []
+        for part in parts:
+            hex_part = part[2:]
+            if not re.fullmatch(r"[0-9A-Fa-f]{4,6}", hex_part):
+                return None
+            cp = int(hex_part, 16)
+            if cp > 0x10FFFF or 0xD800 <= cp <= 0xDFFF:
+                return None
+            chars.append(chr(cp))
+        return "".join(chars)
+
+    if any(ord(ch) > 0x7E for ch in value):
+        return value
+
+    return None
 
 
 class EmojiLibrary:
@@ -385,7 +418,7 @@ _CARD_CONTENT: list[tuple[str, str]] = [
         "Edit the library to add your own glyphs.",
     ),
     (
-        "Obfuscate & Copy",
+        "Encode & Copy",
         "Runs encode and immediately copies the result to your clipboard. "
         "The output looks identical to your anchor text — the payload is invisible.",
     ),
@@ -633,9 +666,14 @@ class _LibraryEditorPanel(QWidget):
         fl.setContentsMargins(0, 0, 0, 0)
         fl.setSpacing(4)
 
-        self._add_emoji = QLineEdit()
-        self._add_emoji.setPlaceholderText("\U0001f60a or :alias:")
-        self._add_emoji.setStyleSheet(self._field_style())
+        self._add_glyph_code = QLineEdit()
+        self._add_glyph_code.setPlaceholderText("glyph or U+XXXX")
+        self._add_glyph_code.setStyleSheet(self._field_style())
+
+        self._add_alias = QLineEdit()
+        self._add_alias.setPlaceholderText(":alias:")
+        self._add_alias.setFixedWidth(110)
+        self._add_alias.setStyleSheet(self._field_style())
 
         self._add_label = QLineEdit()
         self._add_label.setPlaceholderText("label")
@@ -647,7 +685,8 @@ class _LibraryEditorPanel(QWidget):
         btn_add.setFixedHeight(30)
         btn_add.clicked.connect(self._do_add)
 
-        fl.addWidget(self._add_emoji, stretch=1)
+        fl.addWidget(self._add_glyph_code, stretch=1)
+        fl.addWidget(self._add_alias)
         fl.addWidget(self._add_label)
         fl.addWidget(btn_add)
         root.addWidget(form_row)
@@ -683,16 +722,33 @@ class _LibraryEditorPanel(QWidget):
         hl.setContentsMargins(0, 2, 0, 2)
         hl.setSpacing(6)
 
-        # Glyph with tooltip showing active alias
+        glyph_col = QWidget()
+        glyph_layout = QVBoxLayout(glyph_col)
+        glyph_layout.setContentsMargins(0, 0, 0, 0)
+        glyph_layout.setSpacing(0)
+
         lbl_glyph = QLabel(entry["emoji"])
         lbl_glyph.setStyleSheet(f"font-size: 14pt; background: transparent; color: {C_TEXT};")
-        lbl_glyph.setFixedWidth(28)
         lbl_glyph.setToolTip(entry["alias"])
-        hl.addWidget(lbl_glyph)
+        glyph_layout.addWidget(lbl_glyph)
 
-        # Label
+        lbl_code = QLabel(_format_codepoints(entry["emoji"]))
+        lbl_code.setStyleSheet(
+            f"color: {C_MUTED}; font-size: 8pt; background: transparent;"
+        )
+        glyph_layout.addWidget(lbl_code)
+        hl.addWidget(glyph_col, stretch=1)
+
+        lbl_alias = QLabel(entry["alias"])
+        lbl_alias.setStyleSheet(
+            f"color: {C_TEXT}; font-size: 9pt; background: transparent;"
+        )
+        hl.addWidget(lbl_alias, stretch=1)
+
         lbl_name = QLabel(entry["label"])
-        lbl_name.setStyleSheet(f"color: {C_MUTED}; font-size: 9pt; background: transparent;")
+        lbl_name.setStyleSheet(
+            f"color: {C_MUTED}; font-size: 9pt; background: transparent;"
+        )
         hl.addWidget(lbl_name, stretch=1)
 
         # Delete button
@@ -709,47 +765,43 @@ class _LibraryEditorPanel(QWidget):
 
     def _do_add(self) -> None:
         self._validation_lbl.setText("")
-        raw_input = self._add_emoji.text().strip()
+        raw_input = self._add_glyph_code.text().strip()
+        alias = self._add_alias.text().strip()
         label = self._add_label.text().strip()
 
         if not raw_input:
-            self._validation_lbl.setText("Emoji or code is required.")
-            self._add_emoji.setStyleSheet(self._field_style(invalid=True))
+            self._validation_lbl.setText("Glyph/code is required.")
+            self._add_glyph_code.setStyleSheet(self._field_style(invalid=True))
+            return
+        if not alias:
+            self._validation_lbl.setText("Alias is required.")
+            self._add_alias.setStyleSheet(self._field_style(invalid=True))
             return
         if not label:
             self._validation_lbl.setText("Label is required.")
             self._add_label.setStyleSheet(self._field_style(invalid=True))
             return
 
-        # Detect glyph vs code string
-        is_glyph = any(ord(c) > 0x7E for c in raw_input)
-        if is_glyph:
-            emoji_val = raw_input
-            alias = f":{label.lower().replace(' ', '_')}:"
-        else:
-            # Code string — must be printable ASCII; try to resolve glyph from library
-            if not _CODE_RE.match(raw_input):
-                self._validation_lbl.setText("Code must be printable ASCII only.")
-                self._add_emoji.setStyleSheet(self._field_style(invalid=True))
-                return
-            alias = raw_input
-            existing = self._library.load()
-            glyph_match = next(
-                (e["emoji"] for e in existing if raw_input in e["codes"]), None
-            )
-            if not glyph_match:
-                self._validation_lbl.setText("Code not in library — paste the emoji glyph instead.")
-                self._add_emoji.setStyleSheet(self._field_style(invalid=True))
-                return
-            emoji_val = glyph_match
+        if not _CODE_RE.match(alias):
+            self._validation_lbl.setText("Alias must be printable ASCII.")
+            self._add_alias.setStyleSheet(self._field_style(invalid=True))
+            return
+
+        emoji_val = _parse_glyph_or_code(raw_input)
+        if emoji_val is None:
+            self._validation_lbl.setText("Glyph/code must be a glyph or U+XXXX token.")
+            self._add_glyph_code.setStyleSheet(self._field_style(invalid=True))
+            return
 
         # Reset field borders
-        self._add_emoji.setStyleSheet(self._field_style())
+        self._add_glyph_code.setStyleSheet(self._field_style())
+        self._add_alias.setStyleSheet(self._field_style())
         self._add_label.setStyleSheet(self._field_style())
 
         entry = {"emoji": emoji_val, "alias": alias, "codes": [alias], "label": label}
         self._library.add_entry(entry)
-        self._add_emoji.clear()
+        self._add_glyph_code.clear()
+        self._add_alias.clear()
         self._add_label.clear()
         self.refresh()
 
@@ -990,13 +1042,7 @@ class BlindTagWindow(QMainWindow):
         row_layout.setContentsMargins(0, 4, 0, 4)
         row_layout.setSpacing(6)
 
-        btn_encode = QPushButton("Encode")
-        btn_encode.setStyleSheet(_btn_secondary_style())
-        btn_encode.setFixedHeight(36)
-        btn_encode.clicked.connect(self._do_encode)
-        row_layout.addWidget(btn_encode)
-
-        btn_obf = QPushButton("⬡  Obfuscate & Copy")
+        btn_obf = QPushButton("Encode & Copy")
         btn_obf.setStyleSheet(_btn_primary_style())
         btn_obf.setFixedHeight(36)
         btn_obf.clicked.connect(self._encode_and_copy)
@@ -1035,16 +1081,10 @@ class BlindTagWindow(QMainWindow):
         row_layout.setSpacing(6)
 
         btn_decode = QPushButton("Decode")
-        btn_decode.setStyleSheet(_btn_secondary_style())
+        btn_decode.setStyleSheet(_btn_primary_style())
         btn_decode.setFixedHeight(36)
         btn_decode.clicked.connect(self._do_decode)
         row_layout.addWidget(btn_decode)
-
-        btn_paste = QPushButton("⬇  Paste & Decode")
-        btn_paste.setStyleSheet(_btn_primary_style())
-        btn_paste.setFixedHeight(36)
-        btn_paste.clicked.connect(self._paste_and_decode)
-        row_layout.addWidget(btn_paste)
 
         layout.addWidget(row)
 
@@ -1229,7 +1269,7 @@ class BlindTagWindow(QMainWindow):
         if not result:
             return
         QApplication.clipboard().setText(result)
-        self._set_status("✓  Obfuscated payload copied to clipboard.", C_SUCCESS)
+        self._set_status("✓  Encoded payload copied to clipboard.", C_SUCCESS)
 
     def _do_decode(self) -> None:
         raw = self._raw_input.toPlainText()
@@ -1253,11 +1293,6 @@ class BlindTagWindow(QMainWindow):
             self._decode_output.setPlainText("[No Plane 14 payload detected in this text]")
             self._decode_output.setStyleSheet(_textbox_style(C_MUTED, C_SURFACE))
             self._set_status("·  No hidden payload found.", C_MUTED)
-
-    def _paste_and_decode(self) -> None:
-        text = QApplication.clipboard().text()
-        self._raw_input.setPlainText(text)
-        self._do_decode()
 
     def _clear_encode(self) -> None:
         self._anchor_input.clear()
@@ -1296,6 +1331,12 @@ class BlindTagWindow(QMainWindow):
         )
 
     def _stop_watcher(self) -> None:
+        if not self._watcher_active:
+            self._indicator.setStyleSheet(
+                f"color: {C_SURFACE}; font-size: 10pt; background: transparent;"
+            )
+            self._set_status("Clipboard Watcher stopped.", C_MUTED)
+            return
         try:
             QApplication.clipboard().dataChanged.disconnect(self._on_clipboard_change)
         except RuntimeError:
@@ -1327,19 +1368,15 @@ class BlindTagWindow(QMainWindow):
         """Surface notification and populate Decode panel."""
         preview = message[:48] + ("\u2026" if len(message) > 48 else "")
 
+        self._apply_decoded_payload(message, raw, preview)
+
         if self._posture == "background":
-            # Window is hidden — deliver corner notification instead.
-            self._bg_notif.show_for(preview)
+            # Window is hidden — deliver persistent corner notification.
+            self._bg_notif.show_for(preview, persistent=True)
             return
 
         # Foreground path — raise window and show inline banner.
         self._dismiss_notify()
-        self._show_decode()
-        self._raw_input.setPlainText(raw)
-        self._decode_output.setPlainText(message)
-        self._decode_output.setStyleSheet(_textbox_style(C_SUCCESS, C_SURFACE))
-
-        self._set_status(f"\u2b21  PAYLOAD DETECTED  \u2192  \"{preview}\"", C_ACCENT)
 
         notif = QLabel(f"\u2b21  PAYLOAD DETECTED  \u00b7  {preview}", self)
         notif.setAlignment(Qt.AlignCenter)
@@ -1361,6 +1398,15 @@ class BlindTagWindow(QMainWindow):
         self.activateWindow()
         self.setWindowOpacity(1.0)
         QTimer.singleShot(1500, lambda: self.setWindowOpacity(0.96))
+
+    def _apply_decoded_payload(self, message: str, raw: str, preview: str) -> None:
+        """Populate the decode panel with a detected payload."""
+        self._dismiss_notify()
+        self._show_decode()
+        self._raw_input.setPlainText(raw)
+        self._decode_output.setPlainText(message)
+        self._decode_output.setStyleSheet(_textbox_style(C_SUCCESS, C_SURFACE))
+        self._set_status(f"\u2b21  PAYLOAD DETECTED  \u2192  \"{preview}\"", C_ACCENT)
 
     def _dismiss_notify(self) -> None:
         if self._notify_widget is not None:
@@ -1400,7 +1446,7 @@ class BlindTagWindow(QMainWindow):
         if self._current_panel == "encode":
             self._encode_and_copy()
         else:
-            self._paste_and_decode()
+            self._do_decode()
 
     # =========================================================================
     # Window management
@@ -1409,6 +1455,7 @@ class BlindTagWindow(QMainWindow):
     def showEvent(self, event) -> None:  # type: ignore[override]
         """Restore foreground posture whenever the window becomes visible."""
         self._posture = "foreground"
+        self._bg_notif.hide()
         super().showEvent(event)
 
     def _hide_to_background(self) -> None:
@@ -1417,6 +1464,7 @@ class BlindTagWindow(QMainWindow):
         self.hide()
 
     def closeEvent(self, event) -> None:
+        self._bg_notif.hide()
         self._stop_watcher()
         super().closeEvent(event)
 
