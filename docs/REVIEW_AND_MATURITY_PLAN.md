@@ -217,201 +217,285 @@ Current `CHANGELOG.md` has only the `[1.0.0]` release entry. Per Keep-a-Changelo
 
 ### Pass I — Background monitoring posture & notification widget (widget enhancement)
 
-**Status:** Plan revised. Architecture pivot from separate tray app to widget posture enhancement. Implementation authorized after Pass H gate.
+**Status:** Plan locked. Implementation authorized; execute after Pass H gate confirmed.
 
-**Scope:** Extend `BlindTagWindow` with a second operating posture — "background" — reached via an explicit "Hide to background" control. In background posture the clipboard watcher stays active, the focus-steal notification is replaced by a custom ephemeral corner `NotificationWidget`, and the widget raises on notification click. No new entry point, no `QSystemTrayIcon`, no extra dependencies. All behavior lives inside the existing `blindtag-widget` entry point.
+**Scope:** Extend `BlindTagWindow` with a "background" posture — explicit hide, watcher stays alive, focus-stealing notification replaced by a custom ephemeral corner `NotificationWidget`. No new entry point, no `QSystemTrayIcon`, no new dependencies. All behavior lives inside the existing `blindtag-widget` entry point.
 
-**Architecture driver:** The existing Clip Watch mechanism already keeps the watcher alive as long as the window is not closed (`hide()` does not trigger `closeEvent`). The two missing pieces for safe background use were (a) non-intrusive notification and (b) an explicit "hide" transition distinct from minimize and close.
+**Architecture driver:** `hide()` does not trigger `closeEvent`, so the `dataChanged` signal stays connected and the watcher runs. Two pieces were missing: (a) a non-intrusive notification surface for when the window is hidden, and (b) an explicit "Hide" transition distinct from minimize and close.
 
-#### I.1 — Two operating postures
+---
 
-| Posture | Window state | Notification mode | Entry |
+#### I.1 — Posture model
+
+| Posture | Window state | Watcher | Notification |
 |---|---|---|---|
-| **Foreground** | Visible, always-on-top | Inline blue QLabel banner (current) | Normal launch or notification click |
-| **Background** | Hidden, in taskbar | Ephemeral corner `NotificationWidget` | "Hide to background" button |
+| `"foreground"` | Visible, always-on-top | Active or idle | Inline blue `QLabel` banner (current `_notify_payload`) |
+| `"background"` | Hidden, in taskbar | Active | `NotificationWidget.show_for(preview)` |
 
-- **Foreground → Background:** User clicks "Hide to background" title-bar button. `self.hide()` called. Watcher stays connected. `_posture = "background"`.
-- **Background → Foreground:** User clicks `NotificationWidget` body on a hit, or clicks the widget in the Windows taskbar (widget stays in taskbar while hidden — no `Qt.Tool` flag set). `_posture = "foreground"`.
-- **Close (X):** Always a real close — stops watcher, destroys window. No interception. Close means quit.
+**Transitions:**
+- **→ background:** Clip Watch checkbox checked + user clicks "Hide" button in title bar. `self.hide()`, `_posture = "background"`.
+- **→ foreground:** User clicks `NotificationWidget` body. `main_win.show()` / `raise_()` / `activateWindow()`, `_posture = "foreground"`. Or: user clicks taskbar entry (Qt delivers normal show/restore event).
+- **Close (X):** Always a real close — `_stop_watcher()`, `super().closeEvent(event)`. No interception. `closeEvent` is **unchanged**.
 
-#### I.1a — Architecture
+`BlindTagWindow` carries no `Qt.Tool` flag today (confirmed in source). Hidden windows without `Qt.Tool` remain in the Windows taskbar — this is the free "still running" indicator.
 
-```
-blindtag-widget (existing entry point, no change)
-    └── BlindTagWindow
-          ├── _posture: str  ("foreground" | "background")
-          ├── Clip Watch active + foreground → inline QLabel banner (current _notify_payload)
-          ├── Clip Watch active + background → NotificationWidget.show_for(preview)
-          └── "Hide to background" button → self.hide() + _posture = "background"
-
-NotificationWidget  (new class — blindtag/notification.py)
-    ├── Frameless, always-on-top, bottom-right of QScreen.availableGeometry()
-    ├── Content: icon (32px) + "BlindTag" title + 48-char payload preview + × button
-    ├── Auto-dismiss: QTimer, NOTIFY_DURATION_MS (reuses existing constant, ~4500ms)
-    ├── Hover: pause auto-dismiss timer while mouse is inside widget
-    ├── Click body: hide self + main_win.show() + raise_() + activateWindow()
-    └── Click ×: hide self only (does not open widget)
-```
-
-No `QSystemTrayIcon`. No new entry point. No extra dependencies. Zero IPC.
+---
 
 #### I.2 — New file: `blindtag/notification.py`
-
-Approximate structure (~60 lines):
 
 ```python
 # blindtag/notification.py
 """
 blindtag.notification
 =====================
-Ephemeral corner notification widget for background monitoring posture.
+Ephemeral bottom-right corner notification for background monitoring posture.
 """
-from PySide6.QtWidgets import QWidget, QLabel, QPushButton, QHBoxLayout
-from PySide6.QtCore import Qt, QTimer, QPoint
-from PySide6.QtGui import QScreen
+from __future__ import annotations
+from typing import TYPE_CHECKING
+from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QPushButton
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QGuiApplication
 
-NOTIFY_MARGIN_PX = 16
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QMainWindow
+
+NOTIFY_MARGIN_PX: int = 16
+CLOSE_BTN_TEXT: str = "×"
+
 
 class NotificationWidget(QWidget):
-    def __init__(self, main_win, duration_ms: int) -> None:
-        super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+    """Single-instance, single-use corner notification owned by BlindTagWindow."""
+
+    def __init__(self, main_win: QMainWindow, duration_ms: int) -> None:
+        super().__init__(
+            None,
+            Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint,
+        )
         self._main_win = main_win
-        self._timer = QTimer(self, singleShot=True)
-        self._timer.timeout.connect(self.hide)
         self._duration_ms = duration_ms
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.hide)
         self._build_ui()
 
+    def _build_ui(self) -> None:
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 8, 8)
+        self._label = QLabel("BlindTag — Payload detected")
+        close_btn = QPushButton(CLOSE_BTN_TEXT)
+        close_btn.setFixedSize(20, 20)
+        close_btn.setFlat(True)
+        close_btn.clicked.connect(self.hide)
+        layout.addWidget(self._label)
+        layout.addWidget(close_btn)
+        self.adjustSize()
+
     def show_for(self, preview: str) -> None:
-        self._label.setText(f"Payload detected: {preview!r}")
+        self._label.setText(f"⬡  BlindTag  ·  {preview}")
+        self.adjustSize()
         self._reposition()
         self._timer.start(self._duration_ms)
         self.show()
+        self.raise_()
 
     def _reposition(self) -> None:
-        screen = QScreen.virtualSiblingAt(self.screen(), QPoint(0, 0)) or self.screen()
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
         geo = screen.availableGeometry()
-        self.move(geo.right() - self.width() - NOTIFY_MARGIN_PX,
-                  geo.bottom() - self.height() - NOTIFY_MARGIN_PX)
+        self.move(
+            geo.right() - self.width() - NOTIFY_MARGIN_PX,
+            geo.bottom() - self.height() - NOTIFY_MARGIN_PX,
+        )
 
-    def mousePressEvent(self, event) -> None:
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
         self.hide()
         self._main_win.show()
         self._main_win.raise_()
         self._main_win.activateWindow()
 
-    def enterEvent(self, event) -> None:
+    def enterEvent(self, event) -> None:  # type: ignore[override]
         self._timer.stop()
 
-    def leaveEvent(self, event) -> None:
+    def leaveEvent(self, event) -> None:  # type: ignore[override]
         self._timer.start(self._duration_ms)
 ```
 
-#### I.3 — "Hide to background" UX surface
+**Notes:**
+- `QGuiApplication.primaryScreen()` is used for positioning (avoids the `QScreen.virtualSiblingAt` pattern which requires an existing window position).
+- The `×` close button dismisses without opening the widget.
+- The body click opens the widget.
+- Timer is restarted on `leave`, not on `show_for` — hover always resets the full duration.
 
-| Option | Assessment |
+---
+
+#### I.3 — `BlindTagWindow` changes (exact integration points)
+
+**State to add in `__init__`:**
+```python
+self._posture: str = "foreground"
+self._bg_notif: NotificationWidget = NotificationWidget(self, NOTIFY_DURATION_MS)
+```
+`NotificationWidget` is imported at top of `widget.py`: `from .notification import NotificationWidget`.
+
+**`_notify_payload` — posture branch (lines ~1274–1301 today):**
+
+Current code always raises the window. Add branch before `self.raise_()`:
+```python
+if self._posture == "background":
+    preview = message[:48] + ("…" if len(message) > 48 else "")
+    self._bg_notif.show_for(preview)
+    return   # do not raise window; do not show inline banner
+# existing foreground path follows unchanged
+```
+
+**"Hide" button — title bar:**
+
+Shown only while Clip Watch is checked. Visibility is toggled inside `_toggle_watcher` (which already calls `_start_watcher` / `_stop_watcher`). The button is part of the existing frameless title bar widget. Label: `"Hide"`. Tooltip: `"Run in background — click notification to return"`.
+
+Click handler:
+```python
+def _hide_to_background(self) -> None:
+    self._posture = "background"
+    self.hide()
+```
+
+When the user reopens the window (via notification click or taskbar), reset posture:
+```python
+def showEvent(self, event) -> None:  # override
+    self._posture = "foreground"
+    super().showEvent(event)
+```
+
+**`closeEvent` — no change required.** Existing code (`_stop_watcher()` + `super().closeEvent(event)`) is correct and sufficient.
+
+---
+
+#### I.4 — Self-detection guard
+
+Guard already described in §I.6 (previous draft) — simplified here:
+
+In `_on_clipboard_change`, add before calling `_notify_payload`:
+```python
+# Suppress self-detection: window is open and focused → user sees encode result directly
+if self._posture == "foreground" and self.isActiveWindow():
+    return
+```
+
+This is a one-line gate already available in current code structure (lines ~1260–1270).
+
+---
+
+#### I.5 — "Watcher alive" without tray icon
+
+Confirmed: `BlindTagWindow` uses `Qt.FramelessWindowHint | Qt.Window` only — no `Qt.Tool`. Hidden windows without `Qt.Tool` remain in the Windows taskbar. Taskbar entry is the presence indicator and click-to-raise recovery path. No additional indicator needed.
+
+---
+
+#### I.6 — Calamum test contract
+
+**No new catalog entry required.** `NotificationWidget` and background-posture behavior are tested under `blindtag-widget` (`tests/test_widget.py`). `blindtag-all` rollup covers it automatically.
+
+**`catalog/test_definitions.json` — update `blindtag-widget` notes field only:**
+
+Change `notes` in the `widget-pytest` lane from current value to:
+```
+EmojiLibrary schema, validation, add/remove, alias selection (headless).
+GuidancePanel and EmojiFlyout smokes via QApplication fixture.
+TestEncodeResolution: U+XXXX and :alias: resolve pipeline, passthrough for invalid/unknown tokens (headless).
+TestNotificationWidget: construction, show_for label, timer auto-dismiss, body-click callback, hover pause, close-button dismiss-only (all headless with mocked main_win).
+TestBackgroundPosture: _posture default, Hide button triggers hide+posture, _notify_payload routes to NotificationWidget in background posture, showEvent resets posture to foreground, closeEvent stops watcher in both postures.
+```
+
+**New test classes — `tests/test_widget.py`:**
+
+```
+TestNotificationWidget   (headless — mock main_win as MagicMock())
+  test_construction_no_error
+  test_show_for_sets_label_text
+  test_timer_fires_hide           (QTest.qWait or direct timeout.emit())
+  test_body_click_shows_main_win  (assert mock.show/raise_/activateWindow called)
+  test_hover_pauses_timer         (enterEvent stops timer; leaveEvent restarts)
+  test_close_button_hides_only    (× button: hide called, main_win.show NOT called)
+
+TestBackgroundPosture    (requires qapp fixture; BlindTagWindow instantiated)
+  test_posture_defaults_foreground
+  test_hide_to_background_sets_posture_and_hides_window
+  test_show_event_resets_posture_to_foreground
+  test_notify_payload_routes_bg_notif_in_background_posture
+  test_notify_payload_routes_inline_banner_in_foreground_posture
+  test_close_event_stops_watcher_in_foreground_posture
+  test_close_event_stops_watcher_in_background_posture
+```
+
+All `TestNotificationWidget` tests are headless — `NotificationWidget` is instantiated with a `MagicMock()` as `main_win`; no window is shown to screen. `TestBackgroundPosture` requires the session-scoped `qapp` fixture (already in `conftest.py`).
+
+---
+
+#### I.7 — Polymath security alignment
+
+| Invariant | Assessment |
 |---|---|
-| Dedicated title-bar button (visible when Clip Watch active) | **Chosen** — explicit, discoverable, distinct from minimize |
-| Override system minimize button when Clip Watch active | Fragile — breaks expected OS behavior |
-| Keyboard shortcut only | Not discoverable |
-| Clip Watch checkbox auto-hides | Too implicit |
-
-Chosen: a "Hide" button in the title bar area, shown only while Clip Watch is active. Tooltip: `"Run in background — tap notification to return"`. Clicking it calls `self.hide()` and sets `_posture = "background"`.
-
-#### I.4 — "Watcher alive" indicator without tray icon
-
-`BlindTagWindow` does **not** use `Qt.Tool` window flag. A window without `Qt.Tool` remains in the Windows taskbar even when hidden. This provides:
-- A visible presence indicator ("BlindTag is running")
-- A click-to-raise recovery path for missed notifications
-
-No additional indicator needed. The tray icon is therefore optional, not required.
-
-#### I.5 — Tray icon: deferred to optional future enhancement
-
-`QSystemTrayIcon` is not required for this design. Deferred scenarios where it adds value:
-- User wants no taskbar presence at all (full background daemon feel)
-- "Pause watcher" quick action without opening the window
-- Per-user preference
-
-If added in a future pass, it fits over the same `NotificationWidget`-based posture model without changes. The tray icon decision is fully decoupled from background posture delivery.
-
-`blindtag-tray` as a separate entry point is **dropped** from this pass.
-
-#### I.6 — Self-detection guard
-
-When Clip Watch is in background posture and the user encodes something, the watcher fires on its own clipboard write. Guard: if `_posture == "foreground"` and `self.isActiveWindow()`, suppress `NotificationWidget` — the inline banner already shows. No timing heuristics needed.
-
-#### I.7 — Widget integration changes
-
-`BlindTagWindow` changes:
-1. Add `_posture: str` field (`"foreground"` / `"background"`)
-2. `_notify_payload()`: branch on `_posture` — inline QLabel banner vs. `self._notif_widget.show_for(preview)`
-3. Add "Hide" button to title bar (show/hide driven by `_on_clip_watch_toggled`)
-4. "Hide" button `clicked` → `self.hide()` + `self._posture = "background"`
-5. `closeEvent`: unchanged — X always closes. No `_tray_mode` flag needed.
-6. `NotificationWidget` instantiated once at `__init__`, owned by `BlindTagWindow`
-
-#### I.8 — Calamum test coverage
-
-No new catalog entry. `NotificationWidget` and background-posture behavior belong in `tests/test_widget.py` under the existing `blindtag-widget` lane.
-
-New test classes to add to `tests/test_widget.py`:
-
-| Class | Tests |
-|---|---|
-| `TestNotificationWidget` | Construction without error; `show_for()` sets label text; auto-dismiss timer fires; click body calls `show()`/`raise_()` on main window (mocked); hover pauses timer; × button hides without calling main window |
-| `TestBackgroundPosture` | `_posture` defaults `"foreground"`; "Hide" button triggers `hide()` + posture change; `_notify_payload` routes to `NotificationWidget.show_for()` in background posture; `_notify_payload` routes to inline banner in foreground posture; X close stops watcher in either posture |
-
-`blindtag-all` rollup covers `tests/test_widget.py` automatically. No catalog changes needed.
-
-#### I.9 — `pyproject.toml` change
-
-No change. `blindtag-tray` entry point is dropped.
-
-#### I.10 — Polymath security alignment
-
-| Invariant | Status |
-|---|---|
-| 1. No secrets in source control | PASS |
-| 2. Environment is the keyring | N/A — no secrets |
-| 3. Names-only documentation | PASS |
+| 1. No secrets in source control | PASS — no new credentials, keys, or secrets introduced |
+| 2. Environment is the keyring | N/A — no secrets at runtime in this pass |
+| 3. Names-only documentation | PASS — plan documents class/method names only |
 | 4. Agents do not read secret material | PASS |
-| 5. Fail closed on trust ambiguity | PASS — notification renders 48-char excerpt only; no full payload exposed |
+| 5. Fail closed on trust ambiguity | PASS — no trust surface introduced; notification shows 48-char excerpt only; `decode()` called on clipboard text as before |
 | 6. Protected stores require integrity controls | N/A |
-| 7. Sensitive state changes require explicit authorization | PASS — posture change requires explicit button click; no silent transitions |
-| 8. Retained evidence must be verifiable | N/A |
-| 9. Path containment enforced | PASS — no new file I/O; `notification.py` reads no files |
-| 10. Security messaging useful and secret-safe | PASS — notification shows excerpt, never full payload |
+| 7. Sensitive state changes require explicit authorization | PASS — posture change is explicit user button click; no silent background transitions |
+| 8. Retained evidence must be verifiable | PASS — calamum gate produces verifiable `report.json` + stdout/stderr; no new evidence artifacts escape outside `calamum` control |
+| 9. Path containment enforced | PASS — `notification.py` reads no files; writes no files; no new file I/O |
+| 10. Security messaging useful and secret-safe | PASS — `NotificationWidget` shows `preview[:48]` only, same truncation rule as existing `_notify_payload` |
 
 No new SEAM blockers.
 
-#### I.11 — Polymath style alignment
+---
 
-`NotificationWidget` body text follows the operator contract (what happened / excerpt / implied next action = click to open):
+#### I.8 — Polymath style alignment
+
+`NotificationWidget` body follows the operator contract (what happened / excerpt / implied next action):
 
 ```
-BlindTag
-Payload detected: "hello, world..."
+⬡  BlindTag  ·  "hello, world…"      [×]
 ```
 
-Click raises the widget where the user sees the full decode result. Contract met.
+- **What happened:** payload detected
+- **Excerpt:** first 48 chars, truncated with `…`
+- **Why / next action:** click body → widget opens to full decode view
+- **Where is evidence:** widget Decode panel on open; calamum run log for test evidence
 
-#### I.12 — Out of scope for this pass
+Contract met for all five questions.
 
-- `QSystemTrayIcon` / tray icon (optional future enhancement — see §I.5)
-- Auto-start on login (requires persistent daemon or tray; deferred)
-- macOS / Linux platform-specific notification surfaces
-- Multiple simultaneous notification stacking
+---
 
-#### I.13 — Deliverables summary
+#### I.9 — Out of scope for this pass
 
-| Artifact | Action | Notes |
-|---|---|---|
-| `blindtag/notification.py` | CREATE | `NotificationWidget` class, ~60 lines |
-| `blindtag/widget.py` | MODIFY | `_posture` field, `NotificationWidget` owner, "Hide" button, posture branch in `_notify_payload` |
-| `tests/test_widget.py` | MODIFY | Add `TestNotificationWidget` + `TestBackgroundPosture` |
-| `CHANGELOG.md` | MODIFY | Pass I entry |
+- `QSystemTrayIcon` / tray icon (deferred — see Section 10)
+- Auto-start on login (requires tray process; deferred)
+- macOS / Linux platform-specific notification APIs
+- Simultaneous notification stacking (single-instance widget; last-write wins)
+- Notification persistence / history log (deferred to Pass J)
 
-Gate: `calamum test run blindtag-all --project <path>`, `decision: go` required before commit.
+---
+
+#### I.10 — `pyproject.toml`
+
+No change. No new entry point.
+
+---
+
+#### I.11 — Deliverables and sequence
+
+| # | Artifact | Action | Dependency |
+|---|---|---|---|
+| 1 | `blindtag/notification.py` | CREATE | None |
+| 2 | `blindtag/widget.py` | MODIFY | Requires (1) — import `NotificationWidget`; add `_posture`, `_bg_notif`; branch in `_notify_payload`; "Hide" button; `showEvent`; self-detection guard |
+| 3 | `tests/test_widget.py` | MODIFY | Requires (1)(2) — add `TestNotificationWidget` + `TestBackgroundPosture` |
+| 4 | `catalog/test_definitions.json` | MODIFY | Requires (3) — update `blindtag-widget` notes field |
+| 5 | `CHANGELOG.md` | MODIFY | Requires gate pass |
+| **Gate** | `calamum test run blindtag-all --project <path>` | RUN | After (1–4); `decision: go` required before (5) and commit |
+
+Execute in order. No parallelism needed — each step is small.
 
 ---
 
