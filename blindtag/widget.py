@@ -5,23 +5,24 @@ Low-profile desktop observer widget for rapid BlindTag encode/decode workflows.
 
 Visual Identity
 ---------------
-  Background (primary):  #121212  Matte Charcoal
-  Surface (secondary):   #1E1E1E  Dark Gray
-  Raised surface:        #252525  Card Gray
-  Accent:                #4A90D9  Technical Blue
-  Accent hover:          #5BA3F0  Blue Highlight
-  Text (primary):        #E8E8E8  Near-White
-  Text (muted):          #888888  Mid-Gray
-  Success:               #4CAF6E  Confirmation Green
-  Warning:               #E8A838  Amber Alert
-  Error:                 #E85555  Alert Red
+  Background (primary):  #0a0d12  Deep Cool Navy
+  Surface (secondary):   #10161f  Navy Surface
+  Raised surface:        #16212d  Navy Card
+  Accent:                #3dd5f3  Brand Cyan
+  Accent hover:          #62daf7  Cyan Highlight
+  Text (primary):        #edf2f7  Cool Near-White
+  Text (muted):          #9aa9bc  Cool Blue-Gray
+  Success:               #4fc08d  Confirmation Green
+  Warning:               #f3a948  Amber Alert
+  Error:                 #e25757  Alert Red
+  Border/line:           #263546  Navy-tinted Divider
 
 Panel Layout
 ------------
   ┌──────────────────────────────────────────┐
   │ ⬡ BlindTag                       ─   ✕  │  ← draggable title bar
   ├──────────────────────────────────────────┤
-  │ [ Encode ] [ Decode ]     □ Clip Watch   │  ← segmented toggle
+  │ [ Encode ] [ Decode ]   [ Clip Watch ]   │  ← segmented toggle (glow button)
   ├──────────────────────────────────────────┤
   │                                          │
   │  [ANCHOR TEXT / RAW INPUT textbox]       │  ← main input area
@@ -65,7 +66,6 @@ from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -91,16 +91,17 @@ _DEFAULT_LIBRARY_PATH = Path(__file__).resolve().parent.parent / "assets" / "emo
 
 # ─── Colour palette ───────────────────────────────────────────────────────────
 
-C_BG        = "#121212"   # Matte Charcoal  — window background
-C_SECONDARY = "#1E1E1E"   # Dark Gray        — title bar, toggle strip, status bar
-C_SURFACE   = "#252525"   # Card Gray        — read-only output fields
-C_ACCENT    = "#4A90D9"   # Technical Blue   — primary CTA, watcher indicator
-C_ACCENT_H  = "#5BA3F0"   # Blue Highlight   — hover state
-C_TEXT      = "#E8E8E8"   # Near-White       — primary text
-C_MUTED     = "#888888"   # Mid-Gray         — labels, hints, secondary text
-C_SUCCESS   = "#4CAF6E"   # Confirmation Green
-C_WARNING   = "#E8A838"   # Amber Alert
-C_ERROR     = "#E85555"   # Alert Red
+C_BG        = "#0a0d12"   # Deep Cool Navy  — window background
+C_SECONDARY = "#10161f"   # Navy Surface     — title bar, toggle strip, status bar
+C_SURFACE   = "#16212d"   # Navy Card        — read-only output fields
+C_ACCENT    = "#3dd5f3"   # Brand Cyan       — primary CTA, watcher indicator
+C_ACCENT_H  = "#62daf7"   # Cyan Highlight   — hover state
+C_LINE      = "#263546"   # Navy-tinted Line — borders and dividers
+C_TEXT      = "#edf2f7"   # Cool Near-White  — primary text
+C_MUTED     = "#9aa9bc"   # Cool Blue-Gray   — labels, hints, secondary text
+C_SUCCESS   = "#4fc08d"   # Confirmation Green
+C_WARNING   = "#f3a948"   # Amber Alert
+C_ERROR     = "#e25757"   # Alert Red
 
 # ─── Timing ───────────────────────────────────────────────────────────────────
 
@@ -274,7 +275,7 @@ def _textbox_style(color: str = C_TEXT, bg: str = C_SECONDARY) -> str:
     return (
         f"QTextEdit {{"
         f"background-color: {bg}; color: {color}; "
-        f"border: 1px solid #303030; border-radius: 6px; "
+        f"border: 1px solid {C_LINE}; border-radius: 6px; "
         f"font-family: 'Courier New'; font-size: 11pt; padding: 4px;"
         f"}}"
     )
@@ -283,10 +284,34 @@ def _textbox_style(color: str = C_TEXT, bg: str = C_SECONDARY) -> str:
 def _btn_primary_style() -> str:
     return (
         f"QPushButton {{"
-        f"background-color: {C_ACCENT}; color: #FFFFFF; "
-        f"font-weight: bold; border: none; border-radius: 6px; padding: 8px 12px;"
+        f"background-color: {C_ACCENT}; color: #0a0d12; "
+        f"font-weight: bold; border: 1px solid {C_ACCENT}; border-radius: 6px; padding: 8px 12px;"
         f"}}"
-        f"QPushButton:hover {{ background-color: {C_ACCENT_H}; }}"
+        f"QPushButton:hover {{ background-color: {C_ACCENT_H}; border-color: {C_ACCENT_H}; }}"
+    )
+
+
+def _clip_watch_active_style() -> str:
+    """Clip Watch button — active/checked state: brand cyan border glow."""
+    return (
+        f"QPushButton {{"
+        f"background-color: {C_SECONDARY}; color: {C_ACCENT}; "
+        f"border: 2px solid {C_ACCENT}; border-radius: 5px; "
+        f"font-size: 9pt; font-weight: bold; padding: 4px 12px;"
+        f"}}"
+        f"QPushButton:hover {{ background-color: {C_SURFACE}; }}"
+    )
+
+
+def _clip_watch_inactive_style() -> str:
+    """Clip Watch button — idle state: subtle border, muted text."""
+    return (
+        f"QPushButton {{"
+        f"background-color: transparent; color: {C_MUTED}; "
+        f"border: 1px solid {C_LINE}; border-radius: 5px; "
+        f"font-size: 9pt; padding: 5px 12px;"
+        f"}}"
+        f"QPushButton:hover {{ border-color: {C_ACCENT}; color: {C_TEXT}; }}"
     )
 
 
@@ -294,9 +319,9 @@ def _btn_secondary_style() -> str:
     return (
         f"QPushButton {{"
         f"background-color: {C_SURFACE}; color: {C_TEXT}; "
-        f"border: none; border-radius: 6px; padding: 8px 12px;"
+        f"border: 1px solid {C_LINE}; border-radius: 6px; padding: 8px 12px;"
         f"}}"
-        f"QPushButton:hover {{ background-color: #333333; }}"
+        f"QPushButton:hover {{ background-color: #1d2c3d; }}"
     )
 
 
@@ -323,9 +348,9 @@ def _toggle_inactive_style() -> str:
     return (
         f"QPushButton {{"
         f"background-color: {C_SURFACE}; color: {C_TEXT}; "
-        f"border: none; border-radius: 4px; padding: 6px 18px;"
+        f"border: 1px solid {C_LINE}; border-radius: 4px; padding: 6px 18px;"
         f"}}"
-        f"QPushButton:hover {{ background-color: #2C2C2C; }}"
+        f"QPushButton:hover {{ background-color: #1d2c3d; }}"
     )
 
 
@@ -409,7 +434,7 @@ class _GuidancePanel(QWidget):
         super().__init__(parent)
         self.setFixedWidth(200)
         self.setStyleSheet(
-            f"background-color: {C_SECONDARY}; border-right: 1px solid #303030;"
+            f"background-color: {C_SECONDARY}; border-right: 1px solid {C_LINE};"
         )
         self.hide()
 
@@ -454,7 +479,7 @@ class _EmojiFlyout(QFrame):
 
         self.setFrameShape(QFrame.StyledPanel)
         self.setStyleSheet(
-            f"QFrame {{ background-color: {C_SURFACE}; border: 1px solid #303030; border-radius: 6px; }}"
+            f"QFrame {{ background-color: {C_SURFACE}; border: 1px solid {C_LINE}; border-radius: 6px; }}"
         )
         self.setFixedWidth(240)
 
@@ -486,7 +511,7 @@ class _EmojiFlyout(QFrame):
             btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; border: none; border-radius: 4px; "
                 f"font-size: 18pt; padding: 0; }}"
-                f"QPushButton:hover {{ background-color: #303030; }}"
+                f"QPushButton:hover {{ background-color: {C_LINE}; }}"
             )
             alias = entry["alias"]
             emoji = entry["emoji"]
@@ -499,7 +524,7 @@ class _EmojiFlyout(QFrame):
         # Divider
         div = QFrame()
         div.setFrameShape(QFrame.HLine)
-        div.setStyleSheet("color: #303030;")
+        div.setStyleSheet(f"color: {C_LINE};")
         outer.addWidget(div)
 
         # Edit library link
@@ -565,7 +590,7 @@ class _LibraryEditorPanel(QWidget):
         # Divider
         div = QFrame()
         div.setFrameShape(QFrame.HLine)
-        div.setStyleSheet("color: #303030;")
+        div.setStyleSheet(f"color: {C_LINE};")
         root.addWidget(div)
 
         # Scrollable entry list
@@ -584,7 +609,7 @@ class _LibraryEditorPanel(QWidget):
         # Divider
         div2 = QFrame()
         div2.setFrameShape(QFrame.HLine)
-        div2.setStyleSheet("color: #303030;")
+        div2.setStyleSheet(f"color: {C_LINE};")
         root.addWidget(div2)
 
         # Add-entry form
@@ -622,7 +647,7 @@ class _LibraryEditorPanel(QWidget):
 
     @staticmethod
     def _field_style(invalid: bool = False) -> str:
-        border = C_ERROR if invalid else "#303030"
+        border = C_ERROR if invalid else C_LINE
         return (
             f"QLineEdit {{ background-color: {C_SECONDARY}; color: {C_TEXT}; "
             f"border: 1px solid {border}; border-radius: 4px; padding: 3px 6px; font-size: 9pt; }}"
@@ -897,15 +922,11 @@ class BlindTagWindow(QMainWindow):
 
         layout.addStretch()
 
-        self._watcher_chk = QCheckBox(" Clip Watch")
-        self._watcher_chk.setStyleSheet(
-            f"QCheckBox {{ color: {C_MUTED}; font-size: 9pt; spacing: 6px; }}"
-            f"QCheckBox::indicator {{ width: 16px; height: 16px; "
-            f"border: 1px solid {C_MUTED}; border-radius: 3px; background: transparent; }}"
-            f"QCheckBox::indicator:checked {{ background-color: {C_ACCENT}; border-color: {C_ACCENT}; }}"
-        )
-        self._watcher_chk.stateChanged.connect(self._toggle_watcher)
-        layout.addWidget(self._watcher_chk)
+        self._watcher_btn = QPushButton(" Clip Watch")
+        self._watcher_btn.setCheckable(True)
+        self._watcher_btn.setStyleSheet(_clip_watch_inactive_style())
+        self._watcher_btn.toggled.connect(self._toggle_watcher)
+        layout.addWidget(self._watcher_btn)
 
         return strip
 
@@ -1229,10 +1250,12 @@ class BlindTagWindow(QMainWindow):
     # Clipboard Watcher
     # =========================================================================
 
-    def _toggle_watcher(self) -> None:
-        if self._watcher_chk.isChecked():
+    def _toggle_watcher(self, checked: bool) -> None:
+        if checked:
+            self._watcher_btn.setStyleSheet(_clip_watch_active_style())
             self._start_watcher()
         else:
+            self._watcher_btn.setStyleSheet(_clip_watch_inactive_style())
             self._stop_watcher()
 
     def _start_watcher(self) -> None:
@@ -1338,7 +1361,7 @@ class BlindTagWindow(QMainWindow):
         QShortcut(QKeySequence("Escape"), self).activated.connect(self.close)
 
     def _toggle_watcher_hotkey(self) -> None:
-        self._watcher_chk.setChecked(not self._watcher_chk.isChecked())
+        self._watcher_btn.setChecked(not self._watcher_btn.isChecked())
 
     def _primary_action(self) -> None:
         if self._current_panel == "encode":
@@ -1365,6 +1388,9 @@ def run_widget() -> None:
     installed by pyproject.toml.
     """
     app = QApplication.instance() or QApplication(sys.argv)
+    _app_icon_path = Path(__file__).resolve().parent.parent / "assets" / "images" / "blindtag_thumbnail_basic.png"
+    if _app_icon_path.exists():
+        app.setWindowIcon(QIcon(str(_app_icon_path)))
     app.setStyleSheet(_APP_STYLESHEET)
     win = BlindTagWindow()
     win.show()
