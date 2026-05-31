@@ -21,7 +21,7 @@ from blindtag import __version__
 _ENV_UTF8 = {**os.environ, "PYTHONUTF8": "1"}
 
 
-def _run(*args, input_text=None):
+def _run(*args, input_text=None, extra_env=None, cwd=None):
     """Run `python -m blindtag <args>` and return CompletedProcess."""
     return subprocess.run(
         [sys.executable, "-m", "blindtag", *args],
@@ -29,11 +29,12 @@ def _run(*args, input_text=None):
         text=True,
         encoding="utf-8",
         input=input_text,
-        env=_ENV_UTF8,
+        env={**_ENV_UTF8, **(extra_env or {})},
+        cwd=cwd,
     )
 
 
-def _run_shim(shim_fn_name, *args):
+def _run_shim(shim_fn_name, *args, extra_env=None):
     """
     Invoke a named shim function via subprocess to simulate the console-script
     entry point, without requiring the package to be pip-installed.
@@ -49,7 +50,7 @@ def _run_shim(shim_fn_name, *args):
         capture_output=True,
         text=True,
         encoding="utf-8",
-        env=_ENV_UTF8,
+        env={**_ENV_UTF8, **(extra_env or {})},
     )
 
 
@@ -288,3 +289,129 @@ class TestHelpPages:
         result = _run("--help")
         assert result.returncode == 0
         assert "{encode,decode,strip,api,widget}" in result.stdout
+
+    def test_root_help_lists_global_logging_flags(self):
+        result = _run("--help")
+        assert result.returncode == 0
+        assert "--log-level" in result.stdout
+        assert "--verbose" in result.stdout
+
+
+class TestGlobalLoggingFlags:
+    def test_verbose_flag_before_encode_preserves_stdout_contract(self):
+        result = _run("--verbose", "encode", "anchor", "secret")
+        assert result.returncode == 0
+        decoded = _run("decode", result.stdout.strip())
+        assert decoded.returncode == 0
+        assert decoded.stdout.strip() == "secret"
+
+    def test_root_log_level_before_json_encode_keeps_stdout_parseable(self):
+        result = _run("--log-level", "debug", "encode", "anchor", "secret", "--out", "json")
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["payload_length"] == 6
+
+    def test_widget_path_forces_warning_level_even_with_debug_flag(self):
+        script = (
+            "import blindtag.cli, logging; "
+            "logging.basicConfig = lambda **kwargs: print(kwargs['level']); "
+            "blindtag.cli._HANDLERS['widget'] = lambda args: 0; "
+            "blindtag.cli.main(['--log-level', 'debug', 'widget'])"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=_ENV_UTF8,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == str(30)
+
+
+# ---------------------------------------------------------------------------
+# TestHumanConfirmations
+# ---------------------------------------------------------------------------
+
+class TestHumanConfirmations:
+    _CONFIRM_ENV = {"BLINDTAG_CLI_CONFIRM": "1"}
+
+    def test_encode_success_keeps_stdout_clean_and_emits_confirmation(self):
+        result = _run("encode", "anchor", "secret", extra_env=self._CONFIRM_ENV)
+        assert result.returncode == 0
+        tagged = result.stdout.strip()
+        assert tagged != ""
+        decoded = _run("decode", tagged)
+        assert decoded.returncode == 0
+        assert decoded.stdout.strip() == "secret"
+        assert "BlindTag :: encode" in result.stderr
+        assert "decision: payload_encoded" in result.stderr
+        assert "Next action" in result.stderr
+
+    def test_encode_json_keeps_stdout_parseable_while_emitting_confirmation(self):
+        result = _run("encode", "anchor", "secret", "--out", "json", extra_env=self._CONFIRM_ENV)
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["payload_length"] == 6
+        assert "BlindTag :: encode" in result.stderr
+        assert "output_mode" in result.stderr
+
+    def test_decode_clean_miss_emits_human_confirmation(self):
+        result = _run("decode", "plain text", extra_env=self._CONFIRM_ENV)
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert "BlindTag :: decode" in result.stderr
+        assert "decision: no_payload_found" in result.stderr
+        assert "Next action" in result.stderr
+
+    def test_strip_success_keeps_stdout_clean_and_emits_confirmation(self):
+        result = _run("strip", "plain text", extra_env=self._CONFIRM_ENV)
+        assert result.returncode == 0
+        assert result.stdout.strip() == "plain text"
+        assert "BlindTag :: strip" in result.stderr
+        assert "decision: text_stripped" in result.stderr
+
+    def test_encode_error_includes_next_action_block(self):
+        result = _run("encode", "anchor", "caf\u00e9", extra_env=self._CONFIRM_ENV)
+        assert result.returncode == 1
+        assert "BlindTag :: encode" in result.stderr
+        assert "decision: rejected_input" in result.stderr
+        assert "Next action" in result.stderr
+
+    def test_api_subcommand_emits_start_confirmation(self):
+        script = (
+            "import blindtag.api; "
+            "blindtag.api.run_server = lambda **kwargs: None; "
+            "import blindtag.cli; "
+            "blindtag.cli.main(['api', '--port', '9999'])"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env={**_ENV_UTF8, **self._CONFIRM_ENV},
+        )
+        assert result.returncode == 0
+        assert "BlindTag :: api" in result.stderr
+        assert "decision: server_start_requested" in result.stderr
+        assert "9999" in result.stderr
+
+    def test_widget_subcommand_emits_handoff_confirmation(self):
+        script = (
+            "import blindtag.cli, subprocess; "
+            "blindtag.cli._resolve_widget_launcher = lambda: 'C:/mock/blindtag-widget.exe'; "
+            "subprocess.Popen = lambda args: None; "
+            "blindtag.cli.main(['widget'])"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env={**_ENV_UTF8, **self._CONFIRM_ENV},
+        )
+        assert result.returncode == 0
+        assert "BlindTag :: widget" in result.stderr
+        assert "decision: widget_handoff_started" in result.stderr
+        assert "dedicated_launcher" in result.stderr

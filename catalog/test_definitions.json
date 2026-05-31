@@ -173,7 +173,7 @@
               "stdout_capture",
               "stderr_capture"
             ],
-            "notes": "CLI subcommand contracts, exit codes, JSON output, stdin piping, API shim delegation, root-CLI widget compatibility-launch contract, and dedicated widget-shim launch contract."
+            "notes": "CLI subcommand contracts, exit codes, JSON output, stdin piping, API shim delegation, root-CLI widget compatibility-launch contract, dedicated widget-shim launch contract, and human-facing confirmation blocks on stderr while stdout remains clean for text/JSON result contracts."
           }
         ],
         "sandbox_test": [],
@@ -233,7 +233,71 @@
               "stdout_capture",
               "stderr_capture"
             ],
-            "notes": "EmojiLibrary schema, validation, add/remove, alias selection (headless). GuidancePanel and EmojiFlyout smokes via QApplication fixture. TestEncodeResolution: U+XXXX and :alias: resolve pipeline, passthrough for invalid/unknown tokens (headless). TestGlyphCodeParsing: glyph/code parse and derived U+ display helpers. TestNotificationWidget: construction, show_for label, auto-dismiss only when nonpersistent, persistent hidden-anchor mode, screen targeting fallbacks, body-click callback, hover pause, close-button dismiss-only (all headless with mocked main_win). TestBackgroundPosture: _posture default, Hide button triggers hide+posture, hidden posture routes to persistent NotificationWidget anchor, deleted notification widgets are recreated safely, showEvent resets posture to foreground, closeEvent stops watcher in both postures and tolerates notification teardown. TestLibraryEditorColumns: display-only rows show glyph/code, alias, label; add row accepts glyph or Unicode input, rejects alias as glyph/code source. TestActionButtonCleanup: encode panel exposes only Encode & Copy, decode panel exposes only Decode, and top toggles follow the compact-width contract. TestHiddenNotificationAnchor: persistent hidden notification relaunches, dismisses, and replaces correctly."
+            "notes": "EmojiLibrary schema, validation, add/remove, alias selection (headless). GuidancePanel and EmojiFlyout smokes via QApplication fixture, including help scrim/opacity treatment and flyout open-close dismissal contract. TestEncodeResolution: U+XXXX and :alias: resolve pipeline, passthrough for invalid/unknown tokens (headless). TestGlyphCodeParsing: glyph/code parse and derived U+ display helpers. TestNotificationWidget: construction, show_for label, auto-dismiss only when nonpersistent, persistent hidden-anchor mode, screen targeting fallbacks, body-click callback, hover pause, close-button dismiss-only (all headless with mocked main_win). TestBackgroundPosture: _posture default, Hide button triggers hide+posture, hidden posture routes to persistent NotificationWidget anchor, deleted notification widgets are recreated safely, showEvent resets posture to foreground, closeEvent stops watcher in both postures and tolerates notification teardown. TestLibraryEditorColumns: display-only rows show glyph/code, alias, label; add row accepts glyph or Unicode input, rejects alias as glyph/code source. TestActionButtonCleanup: encode panel exposes only Encode, decode panel exposes only Decode, and top toggles follow the compact-width contract. TestClipboardTruthfulness: encode/copy verifies clipboard round-trip, stale clipboard paths refuse false success, and the in-memory encoded source of truth backs the copy lane. TestPressedStateStyling: ghost/button and emoji flyout surfaces expose stronger visible pressed-state styling. TestHiddenNotificationAnchor: persistent hidden notification relaunches, dismisses, and replaces correctly."
+          }
+        ],
+        "sandbox_test": [],
+        "empirical_test": []
+      }
+    },
+    {
+      "id": "blindtag-reporting",
+      "title": "BlindTag Retained Reporting Layer",
+      "summary": "Focused tests for the JSONL retained-event ledger, read-only query filters, controlled export artifact family, checksum verification, optional privileged export signing, and adjacent API reporting endpoints.",
+      "status": "active",
+      "category": "integration",
+      "selector_policy": "exact-name-only",
+      "profiles": [
+        "default",
+        "release"
+      ],
+      "tags": [
+        "api",
+        "reporting",
+        "smoke"
+      ],
+      "policy_flags": [
+        "deterministic-output",
+        "local-only",
+        "release-gate"
+      ],
+      "evidence_requirements": [
+        "stdout_capture",
+        "stderr_capture",
+        "report_json"
+      ],
+      "default_lanes": [
+        "pytest"
+      ],
+      "metadata": {
+        "module": "blindtag.reporting",
+        "test_file": "tests/test_reporting.py"
+      },
+      "lanes": {
+        "pytest": [
+          {
+            "id": "reporting-pytest",
+            "title": "pytest tests/test_reporting.py tests/test_api.py -k reporting",
+            "command": [
+              "{python}",
+              "-m",
+              "pytest",
+              "tests/test_reporting.py",
+              "tests/test_api.py",
+              "-k",
+              "reporting or TestReportingEndpoints",
+              "-v",
+              "--tb=short"
+            ],
+            "expected_artifacts": [
+              "stdout",
+              "stderr"
+            ],
+            "evidence_requirements": [
+              "stdout_capture",
+              "stderr_capture"
+            ],
+            "notes": "Retained-event schema/store tests, log query filters, controlled export artifact family, checksum verification, optional shared-key export signing, and API reporting endpoint coverage."
           }
         ],
         "sandbox_test": [],

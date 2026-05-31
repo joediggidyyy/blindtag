@@ -47,7 +47,11 @@ verifies this property explicitly.
 
 from __future__ import annotations
 
+import logging
+
 from .exceptions import InvalidPayloadError
+
+LOGGER = logging.getLogger(__name__)
 
 __all__ = [
     "PLANE14_OFFSET",
@@ -148,6 +152,11 @@ def encode(anchor: str, hidden_message: str) -> str:
         raise ValueError("hidden_message must be a non-empty string.")
 
     _validate_payload(hidden_message)
+    LOGGER.debug(
+        "Encoding BlindTag payload with anchor_length=%s payload_length=%s",
+        len(anchor),
+        len(hidden_message),
+    )
 
     # Shift every payload byte into Plane 14 tag space
     tag_buffer = "".join(chr(ord(ch) + PLANE14_OFFSET) for ch in hidden_message)
@@ -184,6 +193,7 @@ def decode(raw_text: str) -> str | None:
     """
     collected: list[str] = []
     found_any: bool = False
+    LOGGER.debug("Decoding BlindTag payload from raw_text_length=%s", len(raw_text))
 
     for char in raw_text:
         code = ord(char)
@@ -239,4 +249,5 @@ def strip_plane14(text: str) -> str:
         >>> strip_plane14("no tags here 🌐")
         'no tags here 🌐'
     """
+    LOGGER.debug("Stripping Plane 14 markers from text_length=%s", len(text))
     return "".join(ch for ch in text if not (0xE0000 <= ord(ch) <= 0xE007F))

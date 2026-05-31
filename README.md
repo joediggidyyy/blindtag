@@ -11,6 +11,8 @@ A [Polymath](https://polymath-global.com) open-source project.
 
 BlindTag embeds invisible payloads inside ordinary Unicode text using characters from the **Tags block** (U+E0000–U+E007F) in Unicode Plane 14. The result is visually indistinguishable from the original string and survives NFC / NFD / NFKC / NFKD normalization intact.
 
+As of 2026-05-31, BlindTag also ships a bounded local-only retained reporting substrate under `.blindtag/generated/reporting/` for API operation records, read-only queries, and controlled evidence exports.
+
 ---
 
 ## Architecture
@@ -21,11 +23,13 @@ blindtag/
 │   ├── __init__.py        Public API surface
 │   ├── core.py            Codec engine — encode / decode / strip_plane14
 │   ├── api.py             FastAPI local transport layer
+│   ├── reporting.py       Retained JSONL event store + export helpers
 │   ├── widget.py          Desktop observer widget (PySide6)
 │   └── exceptions.py      Domain exception hierarchy
 ├── tests/
 │   ├── test_core.py       Core engine unit tests (pytest)
-│   └── test_api.py        API endpoint integration tests
+│   ├── test_api.py        API endpoint integration tests
+│   └── test_reporting.py  Retained reporting / export tests
 ├── run_api.py             API server launcher
 ├── run_widget.py          Desktop widget launcher
 ├── pyproject.toml         Package metadata & entry points
@@ -240,6 +244,23 @@ Interactive docs: **http://127.0.0.1:8000/docs**
 { "status": "ok", "service": "BlindTag API", "version": "1.0.0" }
 ```
 
+### `GET /v1/log`
+
+Read-only query surface for the retained BlindTag operation ledger.
+
+| Parameter | Meaning |
+| --------- | ------- |
+| `request_id` | Filter by the API request id emitted in `X-Request-Id` |
+| `operation` | Filter by operation name (`encode`, `decode`, `log_query`, `log_export`) |
+| `level` | Filter by severity (`debug`, `info`, `warning`, `error`, `critical`) |
+| `limit` | Maximum records returned |
+
+### `POST /v1/log/export`
+
+Controlled export surface for retained evidence packets. The export root is always server-owned and path-contained under `.blindtag/generated/reporting/exports/`.
+
+When `BLINDTAG_EXPORT_SIGNING_KEY` is configured, export requests fail closed until a valid privileged request packet is supplied. When signing is absent, BlindTag reports that state in names-only form and still emits checksum-verifiable export artifacts.
+
 ### Payload size policy
 
 | Field            | Maximum      |
@@ -283,11 +304,11 @@ When enabled, BlindTag listens to Qt clipboard change events on the GUI thread. 
 1. Switches to the Decode panel automatically
 2. Populates raw input and extracted payload fields
 3. Shows an inline detection banner when the window is already foregrounded
-4. When hidden in background posture, attempts to show a persistent corner relaunch notification until dismissed or replaced
+4. When hidden in background posture, shows a persistent corner relaunch notification on hide and replaces that anchor with the latest hidden payload notification until dismissed or replaced
 
 No data leaves the local machine. Clipboard detection stays inside the Qt event loop and shuts down with the widget.
 
-**Current note (2026-05-31):** the hidden-notification concept is implemented and covered by focused widget tests, but live operator evidence still shows an unresolved delivery gap in the hidden workflow pending live re-verification. Terminal-free widget launch is a non-negotiable requirement. `blindtag-widget.exe` remains the normal installed widget surface, and `blindtag widget` is restored as a supported compatibility launcher that should hand off to the same widget surface rather than staying attached to the CLI.
+**Current note (2026-05-31):** the hidden workflow lane is now closed. Operator live testing has passed, the hide-time relaunch anchor now appears when BlindTag is hidden with Clip Watch active, and the automated notification coverage is backed by Calamum runs `20260531T220215Z-blindtag-widget` and `20260531T220238Z-blindtag-all`. Terminal-free widget launch remains a non-negotiable requirement. `blindtag-widget.exe` remains the normal installed widget surface, and `blindtag widget` remains the supported compatibility launcher that should hand off to the same widget surface rather than staying attached to the CLI.
 
 ---
 
@@ -327,6 +348,8 @@ pytest --cov=blindtag --cov-report=term-missing
 | `TestLongPayloads`            | 128-char and 512-char payload integrity                |
 | `TestEncodeEndpoint`          | API schema, validation, error codes                    |
 | `TestDecodeEndpoint`          | API round-trip, miss feedback, size limits             |
+| `TestReportingEndpoints`      | Retained API query/export coverage and trust gating    |
+| `TestRetainedExport`          | JSONL export family, checksums, and optional signing   |
 
 ---
 
@@ -334,8 +357,17 @@ pytest --cov=blindtag --cov-report=term-missing
 
 - **Localhost only.** The API server binds to `127.0.0.1` by default. Never expose it on `0.0.0.0` in untrusted network environments.
 - **Input sanitization.** The Pydantic validation layer rejects oversized and malformed payloads at the HTTP boundary before any codec code executes.
-- **No persistence.** The widget and API hold no state between requests. All data lives in process memory only.
+- **Local-only retained reporting.** BlindTag may persist structured API operation records and export packets under `.blindtag/generated/reporting/`. This data never leaves the local machine unless the operator intentionally copies or publishes it.
 - **Platform clipboard.** The clipboard watcher reads only from the local system clipboard (via Qt's native clipboard API). It does not transmit data over any network.
+
+### Reporting validation evidence
+
+Pass J reporting implementation and adjacent reruns were validated under Calamum on 2026-05-31:
+
+- `20260531T230143Z-blindtag-reporting`
+- `20260531T230200Z-blindtag-api`
+- `20260531T230620Z-blindtag-cli`
+- `20260531T230637Z-blindtag-all`
 
 ---
 

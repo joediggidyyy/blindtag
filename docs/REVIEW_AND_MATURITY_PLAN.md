@@ -39,6 +39,84 @@
 - Hidden-notification delivery remains unproven in live use. The last fix improved screen targeting and non-activating popup behavior, but the operator still did not observe the notification. This remains an open implementation gap.
 - The close-path traceback at `blindtag/widget.py:1468` indicates an additional runtime issue in the window close lane that was not covered by the last automated tests.
 
+### 2026-05-31 live widget verification addendum (operator screenshots)
+
+**Evidence reviewed this pass:**
+- Encode-panel screenshot showing status `Encoded payload copied to clipboard.` after encoding `U+2705` with hidden payload `hello, world!`
+- Decode-panel screenshot immediately after pasting the just-encoded glyph, showing only the visible checkmark in raw input and `No Plane 14 payload detected in this text`
+- Emoji-flyout screenshot showing icon clicks with minimal pressed-state feedback
+- Library-editor screenshot showing the current multi-column row presentation in the live surface
+
+**Verified interpretation:**
+- A live **encode -> clipboard -> decode** round-trip regressed. The operator-facing status message claims copy success, but the subsequent decode result shows the hidden payload did not survive the handoff to the next step.
+- Based on the current implementation shape in `blindtag/widget.py`, the most likely fault family is **widget-surface transport**, not the core codec contract: the encoded composite is generated, but the invisible Plane 14 payload appears to be dropped somewhere between output-field storage, clipboard write, paste into the decode field, or a QTextEdit/plain-text round-trip.
+- The current screenshots do **not** prove whether the loss occurs on encode output storage or on decode input capture; they do prove that the live widget round-trip is presently untrustworthy.
+- Emoji/flyout click targets look visually inert during activation. Even if the click is registering, the surface currently under-signals interaction and should gain a conventional pressed-state shading transition so the user can see the action happen.
+
+**Current release implication:**
+- **PyPI publication is blocked by live evidence.** Automated tests remain valuable, but a package intended for near-term downstream consumption should not ship while the widget's flagship encode/decode clipboard path is visibly regressed.
+- The right next lane is a narrow remediation pass focused on: (1) preserving the encoded payload across widget output/clipboard/input transport, (2) restoring visual press feedback on flyout/menu-like click surfaces, and (3) repeating the same live encode/decode proof with the installed `blindtag-widget.exe` path before packaging/publish.
+
+**Recommended root-cause checkpoints for the next code pass:**
+1. Audit whether the encoded composite is stored only in `QTextEdit` state before clipboard copy; if so, retain the exact encoded string in a dedicated runtime variable and copy from that source of truth instead of re-reading from a text widget.
+2. Verify whether Qt text widgets preserve Plane 14 tag characters through `setPlainText(...)`, `toPlainText()`, clipboard copy, and paste. Test each hop independently.
+3. Add a focused widget regression test that proves: encode a glyph anchor -> copy exact encoded string -> paste/read back -> decode returns the original hidden payload.
+4. Add `:pressed` / active-shade styles to emoji-flyout cells and any menu-like action surfaces whose current ghost styling makes clicks appear unresponsive.
+
+### 2026-05-31 diagnostic audit addendum (ORACL evidence pass)
+
+**Audit objective:** determine whether the live glyph-round-trip failure is a deterministic BlindTag encode/decode regression or an intermittent transport failure in the widget / clipboard lane.
+
+**Audit artifacts created this pass:**
+- Diagnostic probe script: `projects/blindtag/semantics_staging/widget_transport_audit.py`
+- Diagnostic probe script: `projects/blindtag/semantics_staging/widget_clipboard_win32_probe.py`
+- Evidence JSON: `projects/blindtag/report_tmp/widget_transport_audit.json`
+- Evidence JSON: `projects/blindtag/report_tmp/widget_clipboard_win32_probe.json`
+
+**Verified findings:**
+1. **Core codec is healthy in the audited scenario.**
+    - The glyph case (`U+2705` + payload `hello, world!`) encoded and decoded correctly in every direct core check.
+2. **`QTextEdit` is not the stripping point in the audited scenario.**
+    - The transport probe showed exact preservation of Plane 14 characters through `QTextEdit.setPlainText(...) -> toPlainText()`.
+3. **Widget output storage is not the stripping point in the audited scenario.**
+    - `BlindTagWindow._do_encode()` produced an output string whose Plane 14 payload decoded correctly after a widget-field round-trip.
+4. **The system clipboard can preserve the full encoded payload exactly.**
+    - The Win32-backed probe recorded `exact-encoded` on all 8/8 direct Qt clipboard writes and all 8/8 widget `_encode_and_copy()` writes for the glyph scenario.
+5. **The clipboard lane is still suspicious because it is intermittently unstable in this environment.**
+    - The earlier transport probe emitted repeated Qt clipboard errors: `OleSetClipboard ... OpenClipboard Failed`, and that same run produced empty clipboard readbacks despite the widget success message.
+    - Taken together with the later 8/8 exact-encoded pass, the evidence points to **intermittent clipboard acquisition/write instability**, not a deterministic Plane 14 stripping bug in the codec or text widgets.
+6. **The widget currently overclaims success.**
+    - `BlindTagWindow._encode_and_copy()` sets clipboard text and immediately reports `Encoded payload copied to clipboard.` with no retry, no verification, and no stale/sentinel detection.
+    - If Windows rejects the clipboard open or the write races another owner, the UI can still claim success even when the actual clipboard content was not updated.
+7. **Pressed-state click feedback is genuinely missing on the relevant surfaces.**
+    - Source audit of `blindtag/widget.py` found hover styles but **no `:pressed` selectors**.
+    - `_btn_ghost_style()` and `_EmojiFlyout` cell styles currently signal hover only, which explains the operator report that menu/flyout clicks look unresponsive.
+
+**Diagnosis verdict:**
+- The audited evidence does **not** support a blanket claim that BlindTag currently strips Plane 14 payloads during normal widget encode/decode.
+- The stronger diagnosis is: **the widget's clipboard handoff is intermittently unreliable on Windows, and the current UI reports success without verifying that the system clipboard actually contains the encoded composite**.
+- The click-feedback issue is independent and confirmed: the flyout / ghost-button surfaces under-signal activation because they lack a conventional pressed-state visual.
+
+**Fully developed update plan for the next code pass:**
+1. **Clipboard success hardening**
+    - Keep the exact encoded composite in a dedicated runtime variable at encode time.
+    - On copy, write from that in-memory source of truth rather than re-reading only from the UI field.
+    - Add bounded retry/backoff around clipboard set on Windows.
+    - Verify clipboard content after write (or at minimum verify non-stale update) before showing a success message.
+    - If verification fails, surface a truthful warning/error state instead of `copied to clipboard`.
+2. **Focused regression coverage**
+    - Add a widget test for `glyph anchor -> encode -> copy -> read back -> decode` success.
+    - Add a failure-path test that simulates clipboard write refusal / stale clipboard and asserts the widget does **not** report success.
+    - Keep the current direct-core and widget-field checks as the non-regression baseline.
+3. **Pressed-state visual feedback**
+    - Add conventional background-shade / border-emphasis `:pressed` states to `_btn_ghost_style()`.
+    - Add the same pressed-state treatment to `_EmojiFlyout` cell buttons and other menu-like click targets whose current ghost treatment reads as inert.
+4. **Release gate after remediation**
+    - Re-run focused widget regression tests.
+    - Re-run full `blindtag-all` validation.
+    - Repeat the installed-surface live proof on `blindtag-widget.exe` using the same glyph scenario that failed in operator testing.
+    - Re-verification completed on 2026-05-31; this widget lane no longer blocks PyPI packaging/publish.
+
 ---
 
 ## TL;DR
@@ -903,7 +981,7 @@ Where signing is configured for the environment, retained JSON artifacts should 
 
 ### Pass N — Widget launch compliance, hidden-notification closure, and top-toggle visual parity
 
-**Status:** IMPLEMENTED — code changes and Calamum gate complete (`20260531T085159Z-blindtag-all`, `decision: go`); live operator re-verification of notification visibility and final visual parity still required.  
+**Status:** COMPLETE — initial code changes gated at `20260531T085159Z-blindtag-all` (`decision: go`), with final hidden-notification closure later confirmed by `20260531T220238Z-blindtag-all` and operator live pass recorded on 2026-05-31.  
 **Dependency:** Pass M codebase is the baseline. This pass is corrective and must land before Pass J scope or any additional widget feature growth.  
 **Scope:** Close the remaining operator-observed gaps in the widget lane without broadening architecture: (1) enforce terminal-free widget launch as the only compliant widget surface, (2) make hidden notification delivery live-visible and close-stable, and (3) bring the top Encode / Decode toggle geometry into actual visual parity with the approved mock. No tray split. No new network surface. No new publishable artifact family.
 
@@ -1053,24 +1131,530 @@ Pass N is complete only when all of the following are true:
 
 ---
 
-### Pass J — Logging and reporting infrastructure (scope definition after widget closure)
+### Pass J — Logging and reporting infrastructure
 
-Blindtag's primary use model is **imported and used via API by other applications**. This pass delivers dense, structured, tiered logging and reporting. Known inputs:
-- Structured log handler attached to `logging.getLogger("blindtag")` at API/CLI startup
-- Per-operation log entries: timestamp, operation type, anchor/payload lengths, resolved token count, outcome
-- Tiered severity: `debug` through `critical` all meaningful; widget is always `warning`-silent
-- CLI `--log-level` raises verbosity; retained log queryable via API reporting endpoints
-- Storage layer and auth/transport scope TBD in scoping session
-- Security invariants 2, 5, 7, 8 re-evaluated against final transport/auth model
-- New calamum catalog lanes for the reporting surface
+**Status:** LOCKED — bounded execution plan defined on 2026-05-31; implementation remains separate.  
+**Dependency:** Widget closure is complete and evidenced (`20260531T220215Z-blindtag-widget`, `20260531T220238Z-blindtag-all`), so the logging/reporting lane may proceed without reopening widget remediation.  
+**See also:** Section 9 below for the detailed execution contract, evidence basis, security alignment, and validation sequence.
 
-**Pass J begins only after Pass N closes and its Calamum gate is confirmed.**
+---
+
+### Pass O — Clipboard reliability and pressed-state truthfulness closure
+
+**Status:** LOCKED — bounded remediation plan derived from live operator evidence plus ORACL diagnostic audit.  
+**Dependency:** Current BlindTag widget code as audited on 2026-05-31; this pass is the immediate publish blocker and must close before PyPI packaging/publication.  
+**Scope:** Fix the Windows widget copy-trust lane and the inert-feeling click surfaces without broadening architecture. This pass is limited to the encode/copy/decode widget path, visual press feedback on menu/flyout ghost surfaces, focused regression coverage, Calamum validation/evidence integrity, and live installed-surface re-verification.
+
+#### O.1 — Evidence basis for this pass
+
+This pass is grounded in these verified surfaces:
+
+- Operator screenshots from 2026-05-31 showing:
+    - encode status claiming clipboard success,
+    - immediate decode miss on the just-encoded glyph,
+    - flyout/menu click surfaces with little visible activation feedback.
+- `projects/blindtag/report_tmp/widget_transport_audit.json`
+    - proved core codec health,
+    - proved `QTextEdit` and widget output field preserve Plane 14 in the audited scenario,
+    - captured intermittent clipboard-open/write failure symptoms in the same environment.
+- `projects/blindtag/report_tmp/widget_clipboard_win32_probe.json`
+    - proved the glyph scenario can succeed end-to-end on the system clipboard,
+    - recorded 8/8 exact-encoded Win32 readbacks for both direct Qt writes and widget `_encode_and_copy()` writes in the audited rerun.
+- `projects/blindtag/blindtag/widget.py`
+    - confirms `_encode_and_copy()` currently reports success immediately after `QApplication.clipboard().setText(...)` with no verification or stale-content detection.
+- `projects/blindtag/blindtag/widget.py` style audit
+    - confirms hover states exist but no `:pressed` states exist on `_btn_ghost_style()` or `_EmojiFlyout` cells.
+
+#### O.2 — Locked diagnosis carried into implementation
+
+1. The audited evidence does **not** support a deterministic Plane 14 codec or text-widget stripping defect.
+2. The strongest current diagnosis is **intermittent Windows clipboard handoff failure plus overconfident success messaging** in the widget.
+3. The click-feedback issue is independent and confirmed: current flyout/ghost-button surfaces under-signal activation because they have no conventional pressed-state shading.
+4. This pass must therefore improve **truthfulness and reliability**, not redesign BlindTag’s product architecture.
+
+#### O.3 — Bounded implementation lanes
+
+##### Lane O-A — Clipboard success hardening
+
+Required behavior:
+
+- Preserve the exact encoded composite in a dedicated in-memory source of truth at encode time.
+- Copy from that source of truth rather than relying only on a UI-field readback.
+- Add bounded retry/backoff around clipboard write on Windows.
+- Verify that the clipboard now contains the intended encoded composite, or at minimum verify that the clipboard changed from known stale/sentinel state to the intended payload, before claiming success.
+- If clipboard verification fails, the widget must **not** say `Encoded payload copied to clipboard.`
+- Failure messaging must be calm, explicit, and next-action oriented.
+
+Out of scope for Lane O-A:
+
+- redesigning the core codec,
+- adding a new transport layer,
+- adding background services, tray surfaces, or alternate clipboard providers,
+- adding runtime dependencies without explicit operator authorization.
+
+##### Lane O-B — Pressed-state visual feedback
+
+Required behavior:
+
+- Add a conventional `:pressed` visual state to `_btn_ghost_style()`.
+- Add the same pressed-state treatment to `_EmojiFlyout` glyph cells.
+- Preserve the current calm Polymath palette language; pressed state should read as real activation, not as a new feature surface.
+- The visual result must make click registration obvious even on low-noise ghost/menu surfaces.
+
+Out of scope for Lane O-B:
+
+- redesigning the full widget theme,
+- introducing animation systems,
+- changing the locked multi-column editor/action-button architecture beyond the requested feedback improvement.
+
+##### Lane O-C — Evidence-backed regression coverage
+
+Required behavior:
+
+- Add focused widget regression coverage for:
+    - glyph anchor -> encode -> copy -> read back -> decode success,
+    - clipboard refusal / stale-content failure path,
+    - truthful success/failure status signaling,
+    - presence of pressed-state styles on affected surfaces where testable.
+- Keep tests bounded to the audited fault family; do not sprawl into unrelated widget rewrites.
+
+#### O.4 — Calamum test contract for this pass
+
+This pass must validate through Calamum-owned evidence, not by ad hoc confidence alone.
+
+**Tier 1 — Focused regression gate**
+
+Run the narrowest affected widget test slice first. Minimum required families:
+
+- clipboard copy/readback success path,
+- clipboard failure-path truthfulness,
+- pressed-state styling / click-surface regression coverage,
+- any adjacent widget tests directly touched by the remediation.
+
+**Tier 2 — Full project gate**
+
+Run:
+
+`calamum test run blindtag-all --project <blindtag-root>`
+
+Required result:
+
+- `decision: go`
+- no unresolved failures in the retained report packet
+
+**Tier 3 — Live installed-surface proof**
+
+After package reinstall, ORACL must personally re-run the installed widget lane:
+
+- `pip install -e .`
+- `blindtag-widget.exe`
+
+Required live proof:
+
+1. encode glyph-anchor payload,
+2. clipboard receives the encoded composite,
+3. paste into decode lane,
+4. decode returns the original hidden payload,
+5. flyout/menu click surfaces show visible pressed-state feedback.
+
+#### O.5 — Calamum security / integrity contract for this pass
+
+This pass must align with Calamum’s retained-evidence and verification posture even though BlindTag itself is not introducing a new signed-call API surface.
+
+Required retained artifacts after the full gate:
+
+- `report_json`
+- `report_md`
+- `manifest_json`
+- `checksums_json`
+- checksum sidecars where emitted by the active Calamum lane
+
+Required integrity behavior:
+
+1. **Checksum verification is mandatory.**
+     - Manifest/checksum artifacts must be present and consistent with the generated run artifacts.
+2. **Signature verification is required when signing is configured.**
+     - If the environment provides signing material (for example `CALAMUM_ED25519_*` or other active Calamum signing env expected by the runner), verify signed JSON artifacts after write.
+3. **Names-only reporting when signing is absent.**
+     - If signing is not configured, record that fact in names-only form and keep checksum/manifest verification as the active integrity lane.
+4. **Fail closed on verification ambiguity.**
+     - Do not treat a missing, invalid, or unverifiable integrity envelope as a soft warning for publish readiness.
+
+No new privileged or signed-call surface is introduced by Pass O. Therefore:
+
+- BlindTag does **not** need a new signed request flow in this pass,
+- but the remediation pass must not weaken the existing Calamum evidence/signature/checksum lane used to validate and clear the release blocker.
+
+#### O.6 — Polymath alignment contract for this pass
+
+##### Polymath security alignment
+
+Reference: `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`
+
+Pass O must preserve:
+
+- names-only evidence and no secret values in docs/output,
+- fail-closed treatment of unverifiable publish-gate evidence,
+- path containment to the BlindTag project and Calamum-generated evidence roots,
+- no surprise machine mutation beyond the explicitly run validation/install commands.
+
+Specific judgment for this pass:
+
+- clipboard verification is a truthfulness improvement, not a new trust-boundary expansion;
+- no new secrets, credentials, or host-specific configuration are introduced;
+- generated audit scripts and evidence remain local review surfaces, not publishable artifacts.
+
+##### Polymath user-facing alignment
+
+Reference: `docs/guides/POLYMATH_USER_FACING_STYLE_AND_FORMATTING_EXPECTATIONS.md`
+
+Pass O must make the widget more truthful against the operator contract:
+
+1. **What ran?** encode/copy action
+2. **What happened?** clipboard copy succeeded or failed
+3. **Why did it happen?** clipboard updated, stale, or unavailable
+4. **What should happen next?** retry, copy manually, or proceed to decode
+5. **Where is the evidence?** automated Calamum run artifacts + live installed-surface proof
+
+The pressed-state update is also a Polymath requirement in practice: the UI should stay calm and low-noise, but it must not hide the fact that an action is being taken.
+
+#### O.7 — BlindTag / project precedent alignment
+
+This pass must preserve the local project rules and already-locked design precedents:
+
+- keep widget launch terminal-free via `blindtag-widget.exe` as the normal handoff lane;
+- keep the current single-window widget architecture;
+- keep runtime dependency set unchanged unless joediggidyyy explicitly authorizes otherwise;
+- keep the public API and codec contract unchanged;
+- keep Calamum-first validation and retained evidence discipline;
+- keep docs truthful about shipped behavior and block publication until live proof clears.
+
+#### O.8 — Deliverables and sequence
+
+| # | Artifact | Action | Notes |
+| --- | --- | --- | --- |
+| 1 | `blindtag/widget.py` | MODIFY | Clipboard truthfulness hardening + pressed-state feedback only within the bounded Pass O lanes |
+| 2 | `tests/test_widget.py` | MODIFY | Focused clipboard reliability and click-feedback regression coverage |
+| 3 | `catalog/test_definitions.json` | MODIFY | Update widget notes only if the focused coverage contract materially changes |
+| 4 | `CHANGELOG.md` | MODIFY | Record Pass O only after validation gate passes |
+| Gate A | focused widget regression | RUN | Required before full Calamum gate |
+| Gate B | `calamum test run blindtag-all --project <path>` | RUN | Must return `decision: go` |
+| Gate C | evidence integrity verification | RUN | Verify manifest/checksum set; verify signatures when configured |
+| Gate D | installed live handoff proof | RUN | `pip install -e .` then `blindtag-widget.exe` and repeat the glyph scenario |
+
+#### O.9 — Acceptance criteria
+
+Pass O is complete only when all of the following are true:
+
+1. The widget no longer claims clipboard success when the clipboard update was not verified.
+2. The audited glyph scenario succeeds through encode -> clipboard -> decode in the installed widget lane.
+3. Focused widget regressions pass.
+4. `blindtag-all` passes via Calamum with `decision: go`.
+5. Manifest/checksum evidence is verified, and signed artifact verification is also completed when signing is configured.
+6. Flyout/menu click surfaces show a visible pressed-state activation consistent with the calm Polymath design language.
+7. PyPI publish readiness can be reclassified only after the live installed-surface proof is recorded.
+
+#### O.10 — Precision implementation checklist (mandatory execution control)
+
+Use this checklist as the execution control surface for Pass O. It is intentionally stricter than the lane summary above.
+
+**Enforcement rule:** a checklist item is not complete just because the code landed or tests passed. Each item must also survive the final installed live-launch observation on `blindtag-widget.exe` before final ORACL signoff.
+
+| # | Precision item | Enforcement rule | Minimum automated proof | Mandatory observed live-launch signoff |
+| --- | --- | --- | --- | --- |
+| O-1 | Scope remains inside Pass O | No implementation may widen beyond clipboard truthfulness, pressed-state feedback, focused tests, Calamum validation, and evidence verification. No architecture drift, no new runtime dependency, no API/codec contract change. | Diff review against `widget.py`, `tests/test_widget.py`, `catalog/test_definitions.json`, and `CHANGELOG.md` only unless explicitly justified by the locked lane. | ORACL confirms the installed widget behavior changed only in the expected clipboard/click-feedback surfaces; no unrelated UI, API, or launch-path drift is visible. |
+| O-2 | Encoded source-of-truth retained | Encode path must retain the exact encoded composite in runtime memory before any clipboard handoff. | Focused widget test proves encode result is preserved and reused by the copy lane. | ORACL launches the installed widget, encodes the glyph scenario, and confirms the copied/decode-ready result behaves as one coherent encode/copy action rather than a stale UI readback accident. |
+| O-3 | Clipboard write is bounded and verified | Copy logic must use bounded retry/backoff and must not claim success until the clipboard update is verified or positively distinguished from stale prior content. | Focused widget tests cover success path plus refusal/stale-content failure path. | ORACL observes the installed widget either: (a) truthfully reports verified copy success and the pasted decode succeeds, or (b) truthfully reports failure without a false success claim. |
+| O-4 | Success/failure messaging is truthful | The widget must never emit `Encoded payload copied to clipboard.` when the update was not verified. Failure text must be calm, explicit, and next-action oriented. | Focused widget assertions on exact success/failure status text or equivalent message-state contract. | ORACL observes the installed widget messaging during the live glyph scenario and confirms the message matches what actually happened on the clipboard/decode path. |
+| O-5 | Ghost/menu pressed states land | `_btn_ghost_style()` must include a visible `:pressed` state and preserve the calm Polymath palette. | Style regression check in `tests/test_widget.py` where practical. | ORACL clicks the installed surface and visually confirms ghost/menu-like controls no longer look inert during activation. |
+| O-6 | Emoji flyout pressed states land | `_EmojiFlyout` cell styling must include a visible `:pressed` state aligned to the same design language. | Focused widget/style regression coverage where practical. | ORACL opens the installed emoji flyout and visually confirms click registration is obvious during cell activation. |
+| O-7 | Focused regression gate passes | Only the narrow Pass O fault family should be exercised first; no skip-by-hope path to the full gate. | Clean focused widget regression run for clipboard truthfulness and pressed-state coverage. | ORACL repeats the same user-facing behavior live after the focused gate so the pass is not closed on headless proof alone. |
+| O-8 | Full Calamum gate passes | `calamum test run blindtag-all --project <blindtag-root>` must return `decision: go` with no unresolved retained-report failures. | Retained Calamum run packet and console evidence. | ORACL performs the installed live launch after the passing Calamum run and confirms the exact audited glyph scenario succeeds on the shipped surface, not just in automation. |
+| O-9 | Evidence integrity is verified | Required retained artifacts (`report_json`, `report_md`, `manifest_json`, `checksums_json`, sidecars where emitted) must exist and verify; signed JSON artifacts must also verify when signing is configured. | Checksum/manifest verification; signature verification when configured; names-only record when signing is absent. | ORACL signs off only after the live launch being used for final approval is tied back to the verified retained evidence packet for the same pass. |
+| O-10 | Final installed handoff proof clears | `pip install -e .` must precede the last signoff run, and `blindtag-widget.exe` is the mandatory final approval surface. | Reinstall completed after the last relevant code/edit pass. | ORACL personally launches `blindtag-widget.exe`, runs the glyph encode -> clipboard -> decode scenario, confirms pressed-state feedback, and records this observed run as the final signoff event. |
+
+**Hard stop rule:** if any item above lacks its corresponding live-launch observation, Pass O remains open even if pytest and Calamum are green. Green bars are helpful; they are not a hall pass.
+
+#### O.11 — Final implementation readiness and governance alignment assessment
+
+**Assessment date:** 2026-05-31  
+**Assessment scope:** readiness to execute Pass O exactly as locked in this document; not a claim that Pass O is already implemented or release-cleared.
+
+##### Verdict summary
+
+- **Implementation readiness:** **YES** — Pass O is sufficiently bounded, evidenced, and sequenced to execute without further planning expansion.
+- **Governance alignment:** **YES** — The pass aligns with BlindTag local instructions, Polymath security/style expectations, and Calamum validation/integrity discipline.
+- **Release / publish readiness:** **NO** — publication remains correctly blocked until the Pass O checklist, evidence verification, and final observed live-launch signoff all clear.
+
+##### Why the implementation lane is ready
+
+1. **Root-cause direction is specific enough.**
+    - Current evidence narrows the problem to clipboard reliability/truthfulness plus missing pressed-state feedback, not a vague full-widget rewrite.
+2. **Scope boundary is mature.**
+    - The plan explicitly forbids architecture drift, dependency growth, API changes, and codec-contract churn.
+3. **Validation sequence is complete.**
+    - Focused regression -> full `blindtag-all` -> integrity verification -> installed live launch is a complete and correctly ordered execution ladder.
+4. **The final handoff rule is explicit.**
+    - Final signoff already requires ORACL-observed launch on `blindtag-widget.exe`, and the precision checklist now applies that requirement to every completion item.
+
+##### Governance alignment assessment
+
+| Governance surface | Verdict | Evidence basis |
+| --- | --- | --- |
+| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass O remains widget/test/catalog/changelog bounded, preserves dependency policy, and keeps API/codec/public-surface stability intact. |
+| BlindTag handoff gate at top of this plan | ALIGNED | Pass O requires installed `blindtag-widget.exe` live observation before final signoff. |
+| Polymath security expectations | ALIGNED | Names-only evidence, fail-closed publish gate, no new secret surface, and required retained-evidence verification are all explicitly preserved. |
+| Polymath user-facing style expectations | ALIGNED | The lane centers truthful operator messaging, visible interaction feedback, and evidence-backed next-step clarity. |
+| Calamum validation discipline | ALIGNED | The pass requires focused regression evidence plus full `blindtag-all` and retained artifact verification rather than ad hoc pytest-only closure. |
+| Publish governance | ALIGNED | PyPI remains blocked until live installed-surface proof and verified retained evidence clear the exact audited failure scenario. |
+
+##### Remaining blockers to final signoff
+
+Pass O is ready to execute, but the following remain intentional blockers to closure until the work is actually performed:
+
+1. Clipboard truthfulness hardening is not yet implemented.
+2. Pressed-state feedback is not yet implemented on the affected surfaces.
+3. Focused widget regressions for the new truthfulness path are not yet recorded.
+4. The final `blindtag-all` retained evidence packet for the completed Pass O code does not yet exist.
+5. The mandatory ORACL-observed installed launch proof for the corrected widget does not yet exist.
+
+##### Final judgment
+
+Pass O is **execution-ready and governance-aligned**.
+
+Pass O is **not** signoff-ready, release-ready, or publish-ready until every item in the precision checklist above is complete and the final observed `blindtag-widget.exe` launch proves the exact clipboard and pressed-state fixes on the installed surface.
+
+#### O.12 — 2026-05-31 post-implementation live UI follow-up (operator screenshots)
+
+**Evidence reviewed this follow-up:**
+
+- Live screenshot of the emoji flyout open over the Encode panel
+- Live screenshot of the help drawer open over the main widget surface
+
+**Verified follow-up findings:**
+
+1. **Emoji flyout close behavior is still below the expected conventional contract.**
+     - Current live behavior does not provide a dependable close path when the drawer is opened and the operator decides not to select anything.
+     - The expected contract is conventional: **click the trigger again or click away to dismiss**.
+     - This is a real usability gap, not a cosmetic preference.
+
+2. **Help drawer legibility is still inadequate in live use.**
+     - The current main-window translucency and the visual competition from the underlying surface continue to interfere with reading the help content.
+     - The issue is not the existence of the drawer; it is the readability of the text once opened.
+
+3. **The flyout click-response improvement was not sufficient on the live surface.**
+     - The current update should be treated as **insufficient**, not necessarily absent.
+     - The operator still does not perceive clear press/activation feedback on the menu-like flyout surface.
+     - The most likely reason is that the landed `:pressed` styling is either too subtle to register in the live palette or is visually lost because selection closes the surface too quickly for the pressed state to read.
+
+**Recommended follow-up handling (no code changes in this pass):**
+
+##### A. Emoji flyout dismissal contract
+
+Recommended priority: **high**
+
+Preferred correction:
+
+- make the emoji trigger a true toggle:
+    - first click opens,
+    - second click closes,
+    - click-away also closes.
+
+Implementation recommendation:
+
+- keep the trigger-click toggle as the primary close contract,
+- add broader click-away dismissal using an application-level or wider-surface mouse filter rather than relying only on narrow parent-local event routing.
+
+##### B. Help drawer legibility
+
+Recommended priority: **high**
+
+Preferred correction:
+
+- temporarily increase the widget body opacity to a fully opaque state while the help drawer is open.
+
+Preferred companion treatment:
+
+- add a subtle dim/scrim effect across the non-help portion of the widget while the drawer is open so the operator's eye is pulled toward the help content.
+
+Alternative acceptable solutions:
+
+1. make the drawer/card backgrounds more opaque and slightly more elevated,
+2. widen the drawer modestly and increase body-text line spacing,
+3. keep overall window opacity unchanged but darken only the main content plane behind the drawer.
+
+Current recommendation ranking:
+
+- **best:** full-opacity window + subtle body scrim while help is open,
+- **good:** opaque drawer + darker main-content plane,
+- **acceptable fallback:** larger text / spacing / width only.
+
+##### C. Flyout click-response visibility
+
+Recommended priority: **medium-high**
+
+Preferred correction:
+
+- strengthen the pressed-state delta so it is unmistakable at a glance:
+    - darker filled pressed background,
+    - brighter text/glyph or subtle accent border,
+    - optional 1px inset/downshift feel.
+
+Likely required companion correction:
+
+- allow the pressed state to remain visible for at least one paint cycle before the flyout dismisses on selection.
+
+Interpretation note:
+
+- this follow-up should be recorded as **"pressed-state patch landed but did not clear live perceptibility"**, not as **"feature omitted"**.
+
+**Signoff impact:**
+
+- These live findings mean the widget still does **not** meet final human-facing signoff quality even though the automated Pass O coverage and retained-evidence lane are green.
+- Clipboard-truthfulness remediation remains valuable and real, but final release confidence still requires a follow-up UI polish/closure pass covering:
+    - flyout dismissal contract,
+    - help-panel readability,
+    - and stronger perceptible press feedback on the flyout/menu surface.
+
+#### 2026-05-31 CLI confirmation-surface audit addendum (no-code review)
+
+**Audit trigger:** joediggidyyy requested that all BlindTag CLI actions provide human-consumable confirmation or handled error text, using the pasted external launcher screenshot only as a rough formatting expectation rather than a content template.
+
+**Evidence reviewed this pass:**
+
+- `projects/blindtag/docs/CLI_IMPLEMENTATION_CHECKLIST.md`
+- `projects/blindtag/docs/CLI_SCHEMA.md`
+- `projects/blindtag/blindtag/cli.py`
+- `projects/blindtag/tests/test_cli.py`
+- live sampled output from:
+    - `python -m blindtag --help`
+    - `python -m blindtag encode "anchor" "café"`
+    - `python -m blindtag decode "plain text"`
+    - `python -m blindtag strip "plain text"`
+
+**Verified current state:**
+
+1. **Basic handled-error routing exists, but it is not yet a full human-facing confirmation surface.**
+    - `encode`, `decode`, `api`, and `widget` do route some failures to stderr with a BlindTag-prefixed line.
+    - Example observed this pass: `blindtag encode: Payload character at index 3 is invalid ...`
+    - This satisfies the minimum "not a traceback" bar in several cases, but it does **not** consistently answer the operator-facing questions "what happened?" and "what should I do next?"
+
+2. **Successful codec actions are still shell-lean, not human-confirming.**
+    - `strip` on a clean string currently prints only the raw result.
+    - `decode` on a clean miss prints nothing and exits 0.
+    - `encode` default text mode prints only the encoded composite.
+    - This is script-friendly, but it does **not** meet joediggidyyy's stated requirement that CLI actions provide a friendly, structured confirmation of action.
+
+3. **Launcher actions do not currently emit a BlindTag-owned success confirmation block.**
+    - `blindtag widget` returns the handoff code from `_launch_widget_process()`, but `cli.py` emits no human-readable success packet when launch succeeds.
+    - `blindtag api` delegates into `run_server(...)` with no BlindTag-owned startup summary before control passes to the server runtime.
+    - Compared with the pasted launcher example, these are the most visibly incomplete confirmation surfaces.
+
+4. **The current implementation does not fully satisfy the already-written Pass C style/security checklist.**
+    - `CLI_IMPLEMENTATION_CHECKLIST.md` requires CLI output to answer: **what ran, what happened, why, what next**.
+    - The same checklist also requires error output to include **reason + next action**.
+    - `cli.py` and `tests/test_cli.py` do not currently lock or verify that richer confirmation contract.
+
+5. **There are additional plan-vs-implementation variances inside the CLI lane beyond confirmation text.**
+    - `CLI_SCHEMA.md` planned global `--log-level` / `--verbose`; current `cli.py` does not implement them.
+    - The logging-hook reservation (`_configure_logging()`) planned in the checklist/schema is not present in `cli.py`.
+    - The locked top-level import-budget note was narrower than the current implementation shape; `cli.py` imports `os`, `shutil`, `subprocess`, `blindtag.core`, and `blindtag.exceptions` at module load.
+    - `tests/test_cli.py` validates exit codes and basic routing, but not the richer human-facing confirmation grammar joediggidyyy is now asking for.
+
+**Unresolved items for the CLI lane (verified against current code):**
+
+- **CLI-1 — Human-facing success confirmations are unresolved.**
+  No consistent friendly confirmation block exists for successful `encode`, `decode`, `strip`, `api`, or `widget` actions.
+
+- **CLI-2 — Next-action guidance in error paths is unresolved.**
+  Current stderr lines give a reason, but generally not a concrete next step.
+
+- **CLI-3 — Launcher-summary contract is unresolved for `api` and `widget`.**
+  These surfaces are the best fit for a structured launcher-style summary packet, and neither currently provides one.
+
+- **CLI-4 — Script-safe vs human-friendly output policy is unresolved.**
+  The code currently preserves raw stdout for codec commands, but the project docs also ask for human-consumable confirmation. The channel policy (stdout vs stderr vs TTY-sensitive behavior) is not yet reconciled.
+
+- **CLI-5 — Pass C logging-hook work remains unresolved.**
+  The planned `_configure_logging()` / global log-level surface is still absent.
+
+- **CLI-6 — Test coverage for confirmation text is unresolved.**
+  Current CLI tests do not lock success-summary text, next-action wording, or launcher confirmation structure.
+
+**Recommended bounded next lane (no code executed in this pass):**
+
+1. **Keep machine-safe result channels intact.**
+    - Preserve raw stdout for `encode`, `decode`, and `strip` results.
+    - Preserve clean JSON on stdout for `--out json`.
+    - Do **not** pollute those result channels with decorative prose.
+
+2. **Add human-readable confirmation on the operator channel.**
+    - Preferred rule: emit the friendly confirmation block on **stderr** for codec commands when running in human-facing mode, so stdout stays script-safe.
+    - For launcher commands (`api`, `widget`), emit a short BlindTag-owned summary block immediately before/after handoff.
+
+3. **Use one stable confirmation grammar across commands.**
+    - Recommended structure:
+        - `BlindTag :: <command>`
+        - `decision: <verb phrase>`
+        - `Summary` block with 2–4 compact fields
+        - `Next action` line
+    - This matches joediggidyyy's pasted expectation at the structure level without copying that launcher's specific content.
+
+4. **Treat decode-clean-miss as a handled outcome, not silent ambiguity, in human mode.**
+    - Keep stdout empty for scripting if required,
+    - but add stderr confirmation such as "no payload found" plus the next step when a human is running the command interactively.
+
+5. **Lock the behavior in tests before implementation closes.**
+    - Add explicit CLI tests for:
+        - success confirmation on `widget` handoff,
+        - startup summary on `api`,
+        - reason + next action on handled codec errors,
+        - human-mode decode clean-miss confirmation,
+        - suppression/cleanliness of stdout in machine-readable paths.
+
+**Recommendation summary:**
+
+- The CLI lane is **functionally implemented** but **not yet human-confirmation complete**.
+- The highest-value unresolved items are `widget` and `api` launcher confirmations, followed by a consistent reason/next-step pattern for handled errors.
+- Before any code pass for this lane, BlindTag should explicitly choose the output-channel rule: **raw result on stdout, friendly confirmation on stderr/interactive channel** is the cleanest fit to both the existing scriptability contract and joediggidyyy's requested operator experience.
+
+**Implementation receipt (2026-05-31 later pass):**
+
+- The bounded CLI confirmation update has now been implemented in `blindtag/cli.py` and covered in `tests/test_cli.py`.
+- Calamum CLI-lane validation passed at `20260531T214710Z-blindtag-cli` (`decision: go`).
+- Full-suite confirmation passed at `20260531T214732Z-blindtag-all` (`decision: go`).
+- Retained artifact checksum verification succeeded for both runs; signing-env remained names-only absent (`CALAMUM_ED25519_PUBLIC_KEY=missing`, `CALAMUM_POLICY_SIGNING_KEY=missing`).
+- The remaining intentionally open CLI-adjacent items are the broader Pass C drift items not required for this bounded confirmation pass (notably global log-level / logging-hook reservation), not the human-confirmation surface itself.
+
+#### 2026-05-31 hide-to-background relaunch anchor remediation receipt
+
+**Verified problem statement:**
+
+- Live operator report narrowed the remaining notification issue: hidden payload-hit notifications were appearing, but the promised relaunch anchor was still not firing at the moment the widget was hidden.
+
+**Implemented correction:**
+
+- `BlindTagWindow._hide_to_background()` now emits the persistent background relaunch notification immediately when Clip Watch is active.
+- The hide-time relaunch anchor uses a stable non-secret preview (`Clip Watch active - click to return`) and remains replaceable by later hidden payload notifications.
+- The hide path stays no-op for the notification surface when the watcher is inactive.
+
+**Automated evidence:**
+
+- Widget-lane Calamum validation passed at `20260531T220215Z-blindtag-widget` (`decision: go`).
+- Full-suite confirmation passed at `20260531T220238Z-blindtag-all` (`decision: go`).
+- Retained artifact checksum verification succeeded for both runs; signing-env remained names-only absent (`CALAMUM_ED25519_PUBLIC_KEY=missing`, `CALAMUM_POLICY_SIGNING_KEY=missing`).
+
+**Closeout status:**
+
+- The hide-trigger path is covered by focused widget regression coverage and full-suite Calamum evidence.
+- Operator live testing passed on 2026-05-31, closing the real desktop relaunch-anchor lane for this remediation pass.
+- This widget-remediation lane is now closed and no longer blocks the next logging/reporting planning lane.
 
 ---
 
 ## Section 9 — Planned: Backend/API Reporting Layer
 
-**Status:** Placeholder — scope not yet defined. Planning deferred until Pass N (widget closure) is complete and gated.
+**Status:** LOCKED — bounded Pass J execution plan ratified on 2026-05-31.
 
 **Primary use model:** blindtag is designed to be **imported and used via API by other applications** — not as a standalone personal tool. The widget is a convenience surface; the API and importable core are the canonical consumption path. This changes the logging and reporting requirements significantly: callers need dense, structured, tiered operation evidence, not casual human-readable output.
 
@@ -1089,9 +1673,409 @@ Blindtag's primary use model is **imported and used via API by other application
 | Storage layer           | Not selected — append-only structured log file, SQLite, or equivalent                                                                   |
 | Auth/transport scope    | Not settled — see invariant 5 DEFERRED status above                                                                                     |
 
-The logging hook reservation (logger namespace, no handler at import, `_configure_logging` in CLI) is implemented in Pass C. The full structured handler, retention, and reporting endpoints are implemented in Pass J.
+The logging hook reservation described in `CLI_SCHEMA.md` is **not** fully implemented in the shipped code as of the 2026-05-31 review pass. `blindtag/cli.py` does not expose the planned global `--log-level` / `--verbose` flags and does not define `_configure_logging()`, while `blindtag/core.py` and `blindtag/api.py` currently operate without the planned `logging.getLogger(__name__)` reservation hooks. Pass J must therefore either absorb that bootstrap work or split it into a narrow prerequisite pass before structured retention/reporting lands.
 
-**Do not begin Pass J scope definition until joediggidyyy initiates the planning session after Pass N gate.**
+### 2026-05-31 logging/reporting implementation gap review (no-code audit)
+
+**Audit scope:** compare the current logging/reporting plan against the shipped BlindTag implementation after widget closure, with emphasis on API-first use, retained evidence, and implementation-ready next steps.
+
+**Sources reviewed:**
+
+- Planning surfaces: `docs/REVIEW_AND_MATURITY_PLAN.md`, `docs/CLI_SCHEMA.md`
+- Runtime surfaces: `blindtag/cli.py`, `blindtag/api.py`, `blindtag/core.py`, `run_api.py`
+- Validation/governance surfaces: `tests/test_cli.py`, `tests/test_api.py`, `catalog/test_definitions.json`
+
+#### Current implementation snapshot
+
+1. **Correlation header is present at the API boundary.**
+    - `blindtag/api.py` adds `X-Request-Id` via middleware and `tests/test_api.py` verifies format, uniqueness, and presence on error responses.
+2. **Human-facing CLI confirmations are implemented, but logging control is not.**
+    - `blindtag/cli.py` emits structured stderr confirmation blocks for human runs, yet the planned global logging controls and bootstrap hook are absent.
+3. **API launcher verbosity exists only as Uvicorn process verbosity.**
+    - `run_api.py` and `blindtag api --log-level ...` pass a log level into `uvicorn.run(...)`, but this is not a BlindTag-owned structured event layer.
+4. **No retained operation log exists yet.**
+    - No append-only log store, no SQLite/file-backed event ledger, and no structured export surface exist in the shipped code.
+5. **No reporting/query API exists yet.**
+    - There is no `/log`, `/log/export`, or equivalent endpoint in `blindtag/api.py`.
+6. **No test/catalog contract exists for reporting.**
+    - `catalog/test_definitions.json` includes no reporting-specific definition, and the current test suite contains no assertions for retained-operation logging, severity filtering, or export/query behavior.
+
+#### Gap matrix
+
+| Area | Planned contract | Current state | Gap verdict | Recommendation |
+| ---- | ---------------- | ------------- | ----------- | -------------- |
+| Logger bootstrap | Global CLI logging control plus `_configure_logging()` hook reservation | Absent in `blindtag/cli.py`; no global `--log-level` / `--verbose` | **High** | Land the bootstrap hook first so later reporting work does not have to reopen CLI routing |
+| Library logger reservation | `logging.getLogger(__name__)` in API/core without import-time handler attachment | No module logger reservation present | **Medium** | Add named loggers in `core.py` and `api.py` without attaching handlers at import time |
+| Structured event schema | Timestamped operation records with outcome/error metadata | No BlindTag-owned structured event emission | **High** | Lock an event schema before choosing storage so tests and exports share one contract |
+| Retained storage | Queryable retained event history | No storage layer selected or implemented | **High** | Prefer one append-only authority first; defer multi-backend ambition until after the schema and query needs are proven |
+| Reporting endpoints | `/log`, `/log/export`, or equivalent caller-facing reporting surface | No reporting endpoints exist | **High** | Scope read-only query/export endpoints only for the first pass; avoid write/mutation/report management surfaces |
+| Severity filtering | Caller-selectable thresholds (`error+`, `debug`, etc.) | No event filtering surface exists; only Uvicorn verbosity for the server process | **Medium** | Make filtering a query concern on top of stored structured levels, not a separate bespoke reporting grammar |
+| Correlation continuity | Request ID linked to retained evidence and exported reports | `X-Request-Id` exists, but is not persisted into a BlindTag-owned event/report layer | **Medium** | Reuse `X-Request-Id` as the primary per-request join key rather than inventing a second correlation token |
+| Validation/governance | Reporting lanes and tests in Calamum + pytest | No reporting catalog/test coverage exists | **High** | Add reporting-specific catalog entries and tests in the same pass as the first shipped reporting surface |
+
+#### Recommendations
+
+1. **Split Pass J into two layers mentally, even if it ships under one label.**
+    - Layer 1: logger bootstrap + event schema + retained storage authority.
+    - Layer 2: read-only API reporting/query/export surface built on top of that stored event stream.
+2. **Use the existing `X-Request-Id` as the canonical correlation key.**
+    - It already exists in `blindtag/api.py`; the missing step is persistence, not reinvention.
+3. **Do not start with multiple storage backends.**
+    - Pick one authoritative retained surface first (append-only JSONL or SQLite are the obvious candidates) and lock the schema around it.
+4. **Keep import-time library behavior quiet.**
+    - The planning intent is still correct here: library consumers should not get forced handlers or surprise stderr chatter just by importing BlindTag.
+5. **Treat reporting as an API contract, not a console prettification exercise.**
+    - CLI confirmation is already handled. The remaining work is machine-consumable retained evidence for downstream callers.
+6. **Bind tests to the first reporting shape immediately.**
+    - The first shipped `/log` / export contract should land with pytest coverage and matching Calamum catalog lanes so the reporting layer is governed from day one.
+
+#### Concise verdict
+
+- BlindTag has **partial foundations** for Pass J: request correlation exists and CLI confirmation is already operator-friendly.
+- BlindTag does **not yet have** the actual reporting substrate: no logger bootstrap, no structured retained event stream, no reporting endpoints, and no governance/tests for that surface.
+- The cleanest next move is a bounded design pass that locks: **event schema -> single retained store -> read-only query/export endpoints -> matching Calamum lanes**.
+
+### Pass J — locked execution plan
+
+**Plan posture:** This section converts the reviewed evidence into a bounded implementation lane. It is intentionally narrower than a full observability platform and is designed to land with no new runtime dependency and no product-surface sprawl.
+
+#### J.1 — Locked decisions
+
+1. **Single retained-store authority in the first pass:** use an append-only JSONL store as the canonical retained event ledger for Pass J.
+    - Preferred root: `.blindtag/generated/reporting/`
+    - Preferred primary ledger: `.blindtag/generated/reporting/operations.jsonl`
+    - Preferred export root: `.blindtag/generated/reporting/exports/`
+    - Rationale: JSONL matches Calamum precedent (`run_index.jsonl`, `report_index.jsonl`), is append-friendly, stdlib-safe, and avoids premature multi-backend complexity.
+2. **No new runtime dependency in Pass J.**
+    - Use only stdlib/logging/FastAPI surfaces already present in BlindTag.
+    - SQLite may be revisited only in a future scale pass if JSONL proves insufficient.
+3. **Logger bootstrap lands in the same pass as retained reporting.**
+    - Pass J absorbs the currently-missing `_configure_logging()` / global CLI log-level work rather than treating it as an unowned future drift item.
+4. **Read-only query, controlled export.**
+    - Query surface is read-only.
+    - Export surface is explicit and controlled; it may write artifacts only under the server-owned reporting export root.
+5. **Correlation key is not reinvented.**
+    - `X-Request-Id` is the canonical per-request join key and must be persisted into retained operation records and export packets.
+6. **No import-time handler attachment.**
+    - Library use stays quiet by default; CLI/API startup owns handler attachment.
+7. **Widget stays warning-silent.**
+    - Pass J does not expand the widget into a new reporting console or verbose desktop telemetry surface.
+8. **Export mutation follows Calamum-style trust discipline.**
+    - Simple read-only log queries do not require a privileged signed request.
+    - Export requests must fail closed on invalid/missing trust material when signing is configured.
+
+#### J.2 — Scope boundary
+
+Pass J is limited to:
+
+- logger bootstrap and log-level control;
+- module logger reservation in `core.py` / `api.py`;
+- append-only retained event writing;
+- read-only API query surface for retained events;
+- controlled export surface for retained log evidence;
+- pytest + Calamum governance coverage for the reporting lane;
+- doc/catalog updates required to describe and validate the new reporting surface.
+
+Pass J explicitly excludes:
+
+- GUI reporting panels, tray dashboards, or widget history browsers;
+- remote/multi-tenant auth redesign beyond the bounded export trust gate;
+- alternate storage backends in the same pass;
+- background agents, services, or external telemetry sinks;
+- any release, publish, or packaging broadening not directly required by the reporting lane.
+
+#### J.3 — Evidence basis carried into implementation
+
+This plan is grounded in these already-verified facts:
+
+- `blindtag/api.py` already emits `X-Request-Id`, and `tests/test_api.py` verifies presence, uniqueness, and error-path continuity.
+- `blindtag/cli.py` already separates human stderr confirmations from machine-safe stdout, proving BlindTag can preserve human-vs-machine channel discipline.
+- `blindtag/cli.py` still lacks global `--log-level` / `--verbose` and `_configure_logging()`.
+- `blindtag/core.py` and `blindtag/api.py` still lack the planned `logging.getLogger(__name__)` reservation hooks.
+- `catalog/test_definitions.json` already treats Calamum evidence (`stdout_capture`, `stderr_capture`, `report_json`) as the validation baseline for BlindTag surfaces.
+- Calamum retained evidence already produces `report_json`, `report_md`, `manifest_json`, `checksums_json`, checksum sidecars, and names-only signing-state reporting when signing is absent.
+- Polymath security guidance requires names-only evidence, fail-closed trust ambiguity, verifiable retained evidence, and explicit authorization for sensitive state changes.
+
+#### J.4 — Bounded implementation lanes
+
+##### Lane J-A — Logger bootstrap and quiet-import reservation
+
+Required behavior:
+
+- Add global CLI controls: `--log-level LEVEL` and `--verbose`.
+- Add `_configure_logging()` in `blindtag/cli.py`.
+- Add `logging.getLogger(__name__)` reservation hooks to `blindtag/core.py` and `blindtag/api.py` with **no** import-time handler attachment.
+- Keep widget launch pinned to warning-level logging regardless of global CLI verbosity.
+
+Acceptance intent:
+
+- BlindTag library imports remain quiet.
+- CLI/API startup owns runtime handler attachment.
+- The logging substrate exists before any retained reporting/export logic tries to attach to it.
+
+##### Lane J-B — Retained event schema and append-only authority
+
+Required behavior:
+
+- Introduce one stable retained event schema for BlindTag operations.
+- Persist retained records append-only into `.blindtag/generated/reporting/operations.jsonl`.
+- Enforce path containment so retained logs and derived exports never escape the declared reporting root unless explicitly authorized in a future pass.
+- Persist `request_id` on API-owned records and preserve enough operation detail to make downstream filtering/export useful.
+
+Minimum stable event fields for Pass J:
+
+- `recorded_at`
+- `event_id`
+- `request_id` (nullable only for non-request surfaces)
+- `surface` (`api`, `cli`, `library`)
+- `operation` (`encode`, `decode`, `strip`, `log_query`, `log_export`, etc.)
+- `severity`
+- `decision` / `outcome`
+- `anchor_length`
+- `payload_length`
+- `resolved_token_count` (when applicable)
+- `error_type` (nullable)
+- `detail` / `reason`
+
+Bounded first-pass rule:
+
+- API encode/decode operations are mandatory retained events.
+- CLI operations may emit retained events once bootstrap exists, but Pass J must not delay the API-first reporting contract waiting on a broader CLI telemetry ambition.
+
+##### Lane J-C — Read-only query surface and controlled export surface
+
+Required behavior:
+
+- Add a read-only query endpoint for retained events.
+- Add a controlled export endpoint for reporting artifacts.
+- Keep the first pass narrow: no mutation of retained events, no purge/reset API, no admin console.
+
+Preferred first-pass shape:
+
+- `GET /v1/log`
+  - filters: `request_id`, `operation`, `level`, `limit`
+  - response is machine-readable and query-safe
+- `POST /v1/log/export`
+  - export formats: `json`, `markdown` only in Pass J
+  - server chooses the output filename and writes only under `.blindtag/generated/reporting/exports/`
+  - response includes decision, artifact family, verification status, and next review path
+
+##### Lane J-D — Export artifact integrity and signed-call behavior
+
+Required behavior:
+
+- Every export operation emits a verifiable artifact family, not just a bare payload file.
+- Export artifact family for Pass J:
+  - exported payload (`.json` or `.md`)
+  - `manifest.json`
+  - `checksums.json`
+  - checksum sidecars where emitted by the implementation lane
+- If signing is configured, JSON export artifacts and privileged export requests must be signature-verified and fail closed on ambiguity.
+- If signing is absent, the lane must record that in names-only form and continue with checksum/manifest verification only.
+
+Trust split for Pass J:
+
+- `GET /v1/log` remains a local read-only query surface and does not require a privileged signed request.
+- `POST /v1/log/export` is the trust-bearing surface; when signing is configured it must require a privileged request packet plus detached signature in a Calamum-style names-only contract (`requester_id`, freshness window, scope, format, signature verification result).
+
+#### J.5 — Calamum validation contract
+
+Pass J must validate through Calamum-owned evidence, not informal local confidence.
+
+Required catalog evolution:
+
+- add a dedicated `blindtag-reporting` definition to `catalog/test_definitions.json`
+- keep `evidence_requirements: ["stdout_capture", "stderr_capture", "report_json"]`
+- preserve `blindtag-all` as the release-gate rollup
+
+Required validation sequence:
+
+1. **Focused reporting gate**
+    - targeted pytest file for reporting/bootstrap/export behavior
+2. **Adjacent API gate**
+    - rerun API tests covering request id continuity plus new `/v1/log` / export endpoints
+3. **Adjacent CLI gate**
+    - rerun CLI tests for global logging bootstrap/flag behavior if CLI surfaces changed
+4. **Full project gate**
+    - `calamum test run blindtag-all --project <blindtag-root>` must return `decision: go`
+5. **Evidence verification gate**
+    - verify `report_json`, `report_md`, `manifest_json`, `checksums_json`, checksum sidecars, and signed JSON artifacts where configured
+
+#### J.6 — Calamum security and Polymath alignment contract
+
+##### Calamum security alignment
+
+Pass J must preserve and extend the existing BlindTag/Calamum evidence posture:
+
+- manifest/checksum verification is mandatory for retained validation artifacts;
+- signed JSON verification is mandatory when signing is configured;
+- names-only reporting is mandatory when signing is absent;
+- export calls fail closed on invalid, expired, or unverifiable privileged request material;
+- no trust-bearing export is treated as successful until its artifact family verifies after write.
+
+##### Polymath security alignment
+
+Reference: `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`
+
+Pass J must preserve:
+
+- names-only evidence;
+- fail-closed trust ambiguity;
+- no import-time secret or handler surprises;
+- explicit operator authority for sensitive export behavior;
+- verifiable retained evidence;
+- path containment to BlindTag-local generated roots.
+
+##### Polymath user-facing alignment
+
+Reference: `docs/guides/POLYMATH_USER_FACING_STYLE_AND_FORMATTING_EXPECTATIONS.md`
+
+Pass J human-facing/API-facing surfaces must answer:
+
+1. what query/export ran,
+2. what happened,
+3. why it happened,
+4. what should happen next,
+5. where the evidence lives.
+
+Human-readable summaries may exist on stderr or report surfaces, but machine-readable outputs must remain stable and parseable.
+
+#### J.7 — Deliverables and execution sequence
+
+| # | Artifact | Action | Notes |
+| --- | --- | --- | --- |
+| 1 | `blindtag/cli.py` | MODIFY | Add global logging controls and `_configure_logging()` bootstrap |
+| 2 | `blindtag/api.py` | MODIFY | Persist retained API events; add query/export endpoints |
+| 3 | `blindtag/core.py` | MODIFY | Add quiet module logger reservation only |
+| 4 | `blindtag/reporting.py` | ADD | Centralize event schema, JSONL append/read, export helpers, and verification plumbing |
+| 5 | `.gitignore` | MODIFY | Keep `.blindtag/generated/` local-only |
+| 6 | `tests/test_reporting.py` | ADD | Reporting schema/store/query/export coverage |
+| 7 | `tests/test_api.py` | MODIFY | Add `/v1/log` and export endpoint coverage |
+| 8 | `tests/test_cli.py` | MODIFY | Add global log-level / bootstrap flag coverage as needed |
+| 9 | `catalog/test_definitions.json` | MODIFY | Add `blindtag-reporting` lane and update notes |
+| 10 | `README.md` / `CHANGELOG.md` | MODIFY | Document shipped reporting surface only after validation passes |
+| Gate A | `blindtag-reporting` targeted Calamum lane | RUN | Must pass before adjacent/full reruns |
+| Gate B | adjacent API / CLI reruns | RUN | Required if those surfaces changed |
+| Gate C | `blindtag-all` | RUN | Must return `decision: go` |
+| Gate D | evidence integrity verification | RUN | Verify checksums/manifest family and signatures where configured |
+
+#### J.8 — Acceptance criteria
+
+Pass J is complete only when all of the following are true:
+
+1. `blindtag` exposes the planned global logging bootstrap controls without attaching handlers at import time.
+2. API encode/decode operations produce retained structured events in the declared local reporting root.
+3. `GET /v1/log` returns stable machine-readable filtered results.
+4. `POST /v1/log/export` writes only under the controlled export root and returns a verifiable artifact family.
+5. Export requests fail closed on invalid/missing privileged trust material when signing is configured.
+6. Reporting/export pytest coverage exists and is represented in the Calamum catalog.
+7. `blindtag-all` passes with retained evidence verified via checksums, and via signatures where configured.
+8. Docs describe the shipped surface truthfully without overstating remote auth, storage scale, or signed-state guarantees.
+
+#### J.9 — Final judgment for this planning pass
+
+Pass J is now **planning-complete, bounded, and execution-ready**.
+
+The locked shape is:
+
+- **bootstrap first** (`_configure_logging`, named loggers, quiet imports),
+- **JSONL retained authority second**,
+- **read-only query + controlled export third**,
+- **Calamum evidence/security verification throughout**.
+
+This plan is intentionally mature but narrow: it gives BlindTag the first real reporting substrate without turning the project into a broader observability platform in the same pass.
+
+#### J.10 — Final implementation readiness and governance alignment assessment
+
+**Assessment date:** 2026-05-31  
+**Assessment scope:** readiness to execute Pass J exactly as locked above; not a claim that Pass J is already implemented or validation-cleared.
+
+##### Verdict summary
+
+- **Implementation readiness:** **YES** — Pass J is sufficiently bounded, sequenced, and evidenced to execute without additional planning expansion.
+- **Governance alignment:** **YES** — the locked plan aligns with BlindTag local instructions, Calamum evidence/security expectations, and the parent Polymath security/style guides.
+- **Closeout readiness:** **NO** — Pass J remains open until the retained-event substrate, query/export surface, tests, Calamum receipts, and evidence verification all exist in shipped code.
+
+##### Why the implementation lane is ready
+
+1. **The implementation order is now deterministic.**
+    - Bootstrap -> JSONL retained authority -> read-only query/export -> validation/evidence verification is a complete execution ladder with no unresolved architecture branch point left inside the pass.
+2. **The storage decision is bounded.**
+    - The plan chose a single append-only JSONL authority for the first pass, removing the biggest scope-drift risk from the reporting lane.
+3. **Trust handling is specific instead of vague.**
+    - Read-only query remains local and non-privileged; controlled export is the only trust-bearing surface and must fail closed when signing is configured.
+4. **Validation is already shaped around existing project precedent.**
+    - The lane uses the same Calamum-first model already established elsewhere in BlindTag: focused lane -> adjacent reruns -> `blindtag-all` -> manifest/checksum/signature verification where configured.
+5. **The doc now answers the main execution questions up front.**
+    - what will be changed,
+    - in what order,
+    - under what evidence contract,
+    - and what counts as completion.
+
+##### Governance alignment assessment
+
+| Governance surface | Verdict | Evidence basis |
+| --- | --- | --- |
+| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass J stays inside API/CLI/core/tests/catalog/docs with no dependency expansion and no unrelated product-surface growth. |
+| BlindTag dependency policy | ALIGNED | The locked plan explicitly forbids a new runtime dependency and defers SQLite/alternate backends. |
+| BlindTag API stability rule | ALIGNED | New reporting endpoints are deliberately scoped and documented as the explicit subject of Pass J rather than accidental surface drift. |
+| Calamum validation precedent | ALIGNED | The plan requires dedicated lane coverage, `blindtag-all`, and retained artifact verification instead of ad hoc trust. |
+| Calamum security / evidence posture | ALIGNED | Checksums/manifest verification remain mandatory; signatures are mandatory when configured; names-only reporting remains required when signing is absent. |
+| Polymath security expectations | ALIGNED | The plan preserves fail-closed trust decisions, names-only evidence, path containment, and verifiable retained artifacts. |
+| Polymath user-facing expectations | ALIGNED | Query/export outputs are required to answer what ran, what happened, why, what next, and where the evidence lives while preserving machine-readable stability. |
+
+##### Remaining blockers to final signoff
+
+Pass J is ready to execute, but these are still intentional blockers to closure until implementation actually lands:
+
+1. Global logging bootstrap controls are not yet present in shipped `blindtag/cli.py`.
+2. `blindtag/core.py` and `blindtag/api.py` do not yet reserve module loggers.
+3. No retained event ledger exists under `.blindtag/generated/reporting/`.
+4. No `/v1/log` or `/v1/log/export` surface exists in shipped code.
+5. No reporting-specific pytest file or `blindtag-reporting` Calamum definition exists yet.
+6. No Pass J retained evidence packet exists yet for checksum/signature verification.
+
+##### Final judgment
+
+Pass J is **execution-ready and governance-aligned**.
+
+Pass J is **not** implementation-complete, validation-complete, or closeout-ready until the bounded reporting surface lands in code, the reporting lane passes under Calamum, and the retained evidence family verifies under the same fail-closed rules already established elsewhere in BlindTag.
+
+#### J.11 — Implementation receipt and validation closeout
+
+**Execution date:** 2026-05-31
+
+Pass J is now **implemented and validation-complete**.
+
+Delivered surfaces:
+
+1. `blindtag/reporting.py` added as the JSONL-first retained reporting authority.
+2. `blindtag/api.py` now persists retained API operation records and exposes `GET /v1/log` plus `POST /v1/log/export`.
+3. `blindtag/cli.py` now ships the planned global `--log-level` / `--verbose` bootstrap hook.
+4. `blindtag/core.py` now reserves a quiet module logger without import-time handler attachment.
+5. `tests/test_reporting.py` added focused retained-store / export / signing coverage.
+6. `tests/test_api.py` and `tests/test_cli.py` extended for the reporting lane and logging bootstrap.
+7. `catalog/test_definitions.json` now includes `blindtag-reporting`.
+
+Validation evidence:
+
+- Focused reporting gate: `20260531T230143Z-blindtag-reporting` — `decision: go`
+- Adjacent API gate: `20260531T230200Z-blindtag-api` — `decision: go`
+- Adjacent CLI gate: `20260531T230620Z-blindtag-cli` — `decision: go`
+- Full project gate: `20260531T230637Z-blindtag-all` — `decision: go`
+
+Integrity posture observed in retained evidence:
+
+- Calamum emitted the expected report / manifest / checksums artifact family for each gate.
+- The first focused reporting attempt (`20260531T230059Z-blindtag-reporting`) failed on post-write signature verification drift; the implementation was corrected so signature sidecars are written only after manifest/checksum content reaches final form.
+- The corrected reporting rerun verified cleanly under the same checksum-first retained evidence posture.
+
+Final implementation judgment for Pass J:
+
+- **Implementation status:** COMPLETE
+- **Validation status:** COMPLETE
+- **Governance status:** ALIGNED
+- **Closeout status:** READY
 
 ---
 
@@ -1145,8 +2129,10 @@ No secrets. No network. `HKCU` registry write is user-authorized opt-in only. Al
 | Tray process (§10)       | DEFERRED — preserved for future pass after Pass I ships                                                      |
 | Pass M plan              | LOCKED — bounded implementation plan aligned to Polymath + Calamum contracts                                 |
 | Pass N plan              | LOCKED — corrective widget closure pass for terminal-free launch, hidden notification, and top-toggle parity |
-| Pass J plan              | PLACEHOLDER — scope definition after Pass N gate                                                             |
+| Pass O plan              | LOCKED — clipboard reliability and pressed-state truthfulness closure aligned to Calamum test/security and Polymath guides |
+| PyPI publish readiness   | PASS O BLOCKER CLEARED — widget publish blocker closed on 2026-05-31; any publish timing is now a separate operator/release decision |
+| Pass J plan              | COMPLETE — logging/reporting shipped and validated (`20260531T230143Z-blindtag-reporting`, `20260531T230637Z-blindtag-all`) |
 
-**Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass N (widget closure corrections) → Pass J (logging).
+**Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass N (widget closure corrections) → Pass O (clipboard reliability + pressed-state truthfulness + live publish blocker closure) → Pass J (logging).
 
 Pass M is implementation-ready and bounded by the contracts in M.4–M.6.

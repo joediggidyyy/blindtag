@@ -62,3 +62,6 @@ report_tmp/
 
 # Calamum generated runtime outputs
 .calamum/
+
+# BlindTag generated reporting outputs
+.blindtag/

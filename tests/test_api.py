@@ -13,11 +13,23 @@ Run with:
 
 import pytest
 from fastapi.testclient import TestClient
+from pathlib import Path
 
 from blindtag.api import MAX_HIDDEN_CHARS, MAX_RAW_TEXT_CHARS, app
 from blindtag.core import decode
 
 client = TestClient(app, raise_server_exceptions=True)
+
+
+@pytest.fixture(autouse=True)
+def isolate_reporting_root(tmp_path: Path):
+    previous = getattr(app.state, "reporting_base_dir", None)
+    app.state.reporting_base_dir = tmp_path
+    yield tmp_path
+    if previous is None:
+        delattr(app.state, "reporting_base_dir")
+    else:
+        app.state.reporting_base_dir = previous
 
 
 # =============================================================================
@@ -300,3 +312,61 @@ class TestSecurityHeaders:
         assert r.status_code == 422
         assert r.headers.get("x-content-type-options") == "nosniff"
         assert r.headers.get("x-frame-options") == "DENY"
+
+
+class TestReportingEndpoints:
+
+    def test_log_query_returns_retained_item_for_request_id(self) -> None:
+        encode_response = client.post(
+            "/v1/encode",
+            json={"anchor": "query anchor", "hidden_message": "query_payload"},
+        )
+        request_id = encode_response.headers["x-request-id"]
+
+        query_response = client.get("/v1/log", params={"request_id": request_id})
+        assert query_response.status_code == 200
+        body = query_response.json()
+        assert body["count"] == 1
+        assert body["items"][0]["request_id"] == request_id
+        assert body["items"][0]["operation"] == "encode"
+        assert body["items"][0]["outcome"] == "payload_encoded"
+
+    def test_log_export_writes_artifact_family_under_reporting_root(self, tmp_path: Path) -> None:
+        client.post(
+            "/v1/encode",
+            json={"anchor": "export anchor", "hidden_message": "export_payload"},
+        )
+
+        export_response = client.post(
+            "/v1/log/export",
+            json={"format": "json", "limit": 10},
+        )
+        assert export_response.status_code == 200
+        body = export_response.json()
+        assert body["decision"] == "export_written"
+        payload_path = tmp_path / body["artifact_family"]["payload"]
+        manifest_path = tmp_path / body["artifact_family"]["manifest"]
+        checksums_path = tmp_path / body["artifact_family"]["checksums"]
+        assert payload_path.exists()
+        assert manifest_path.exists()
+        assert checksums_path.exists()
+        assert body["verification"]["payload_checksum"] is True
+        assert body["verification"]["manifest_checksum"] is True
+        assert body["verification"]["checksums_checksum"] is True
+
+    def test_log_export_fails_closed_when_signing_is_configured_without_request_material(
+        self,
+        monkeypatch,
+    ) -> None:
+        client.post(
+            "/v1/encode",
+            json={"anchor": "signed export", "hidden_message": "payload"},
+        )
+        monkeypatch.setenv("BLINDTAG_EXPORT_SIGNING_KEY", "shared-secret")
+
+        export_response = client.post(
+            "/v1/log/export",
+            json={"format": "json", "limit": 10},
+        )
+        assert export_response.status_code == 403
+        assert "missing" in export_response.json()["detail"].lower()

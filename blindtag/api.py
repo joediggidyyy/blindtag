@@ -5,10 +5,12 @@ Secure local transport layer for BlindTag encode/decode operations.
 
 Architecture
 ------------
-A lightweight FastAPI ASGI application with two functional endpoints:
+A lightweight FastAPI ASGI application with four functional endpoints:
 
-  POST /v1/encode  — Embeds a hidden ASCII payload into visible cover text.
-  POST /v1/decode  — Extracts any Plane 14 tag payload from a raw string.
+  POST /v1/encode      Embeds a hidden ASCII payload into visible cover text.
+  POST /v1/decode      Extracts any Plane 14 tag payload from a raw string.
+  GET  /v1/log         Queries retained structured BlindTag event records.
+  POST /v1/log/export  Writes a controlled retained-evidence export packet.
 
 Security Model
 --------------
@@ -18,6 +20,8 @@ Security Model
   providing a second defence layer on top of the core engine's own checks.
 • All exceptions from the core engine are caught and surfaced as structured
   JSON error responses — no stack traces leak to callers.
+• Retained reporting is local-only and path-contained under
+  `.blindtag/generated/reporting/`.
 • Intended for localhost-only use; CORS is restricted accordingly.
 
 Running the server
@@ -29,23 +33,27 @@ Running the server
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
+from . import reporting
 from .core import decode, encode
 from .exceptions import InvalidPayloadError
 
+LOGGER = logging.getLogger(__name__)
+
 # ─── Payload size policy ──────────────────────────────────────────────────────
 
-MAX_ANCHOR_CHARS: int   = 10_000   # ~10 KB of cover text
-MAX_HIDDEN_CHARS: int   =  1_000   # Plane 14 payload ceiling
-MAX_RAW_TEXT_CHARS: int = 50_000   # Input ceiling for decode scans
+MAX_ANCHOR_CHARS: int = 10_000
+MAX_HIDDEN_CHARS: int = 1_000
+MAX_RAW_TEXT_CHARS: int = 50_000
 
 # ─── Application factory ──────────────────────────────────────────────────────
 
@@ -61,7 +69,6 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# Restrict CORS to loopback origins only
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -80,12 +87,13 @@ app.add_middleware(
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     """Inject mandatory security headers on every response."""
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-Request-Id"] = str(uuid.uuid4())
+    response.headers["X-Request-Id"] = request_id
     return response
-
 
 
 @app.exception_handler(InvalidPayloadError)
@@ -93,6 +101,7 @@ async def invalid_payload_handler(
     request: Request, exc: InvalidPayloadError
 ) -> JSONResponse:
     """Surface BlindTag domain errors as 422 Unprocessable Entity."""
+    LOGGER.warning("BlindTag invalid payload rejected for request_id=%s", _request_id(request))
     return JSONResponse(
         status_code=422,
         content={"detail": str(exc), "error_type": "InvalidPayloadError"},
@@ -129,13 +138,7 @@ class EncodeRequest(BaseModel):
     @field_validator("hidden_message")
     @classmethod
     def must_be_printable_ascii(cls, value: str) -> str:
-        """
-        Schema-level ASCII guard — runs before the core engine.
-
-        Rejects any payload containing characters outside the printable
-        ASCII window at the HTTP boundary, returning a structured 422
-        before codec execution begins.
-        """
+        """Reject non-printable or non-ASCII payloads at the HTTP boundary."""
         for idx, char in enumerate(value):
             code = ord(char)
             if not (0x20 <= code <= 0x7E):
@@ -193,6 +196,100 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class OperationRecord(BaseModel):
+    recorded_at: str
+    event_id: str
+    request_id: Optional[str] = None
+    surface: str
+    operation: str
+    severity: str
+    decision: str
+    outcome: str
+    anchor_length: Optional[int] = None
+    payload_length: Optional[int] = None
+    resolved_token_count: Optional[int] = None
+    error_type: Optional[str] = None
+    detail: str
+    reason: Optional[str] = None
+
+
+class LogQueryResponse(BaseModel):
+    detail: str
+    count: int
+    limit: int
+    filters: dict[str, Optional[str | int]]
+    items: list[OperationRecord]
+
+
+class LogExportRequest(BaseModel):
+    format: str = Field(default="json", pattern="^(json|markdown)$")
+    request_id: Optional[str] = None
+    operation: Optional[str] = None
+    level: Optional[str] = None
+    limit: int = Field(
+        default=reporting.DEFAULT_QUERY_LIMIT,
+        ge=1,
+        le=reporting.MAX_EXPORT_LIMIT,
+    )
+    requester_id: Optional[str] = None
+    scope: Optional[str] = None
+    expires_at: Optional[str] = None
+    signature: Optional[str] = None
+
+
+class LogExportResponse(BaseModel):
+    decision: str
+    detail: str
+    export_id: str
+    format: str
+    record_count: int
+    filters: dict[str, Optional[str | int]]
+    artifact_family: dict[str, object]
+    signature_state: dict[str, object]
+    verification: dict[str, bool]
+    next_action: str
+
+
+def _reporting_base_dir(http_request: Request) -> object:
+    """Return the current retained reporting base directory."""
+    return getattr(http_request.app.state, "reporting_base_dir", None)
+
+
+def _request_id(http_request: Request) -> Optional[str]:
+    """Return the middleware-assigned request identifier."""
+    return getattr(http_request.state, "request_id", None)
+
+
+def _record_api_event(
+    http_request: Request,
+    *,
+    operation: str,
+    severity: str,
+    outcome: str,
+    detail: str,
+    anchor_length: Optional[int] = None,
+    payload_length: Optional[int] = None,
+    resolved_token_count: Optional[int] = None,
+    error_type: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> None:
+    """Persist one API-owned retained event."""
+    record = reporting.build_event_record(
+        surface="api",
+        operation=operation,
+        severity=severity,
+        outcome=outcome,
+        detail=detail,
+        request_id=_request_id(http_request),
+        anchor_length=anchor_length,
+        payload_length=payload_length,
+        resolved_token_count=resolved_token_count,
+        error_type=error_type,
+        reason=reason,
+    )
+    reporting.append_event(record, base_dir=_reporting_base_dir(http_request))
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.post(
@@ -201,32 +298,52 @@ class HealthResponse(BaseModel):
     summary="Embed hidden payload into cover text",
     tags=["Codec"],
 )
-async def encode_endpoint(request: EncodeRequest) -> EncodeResponse:
-    """
-    Embed *hidden_message* into *anchor* using invisible Plane 14 tag characters.
-
-    The returned ``result`` string is visually indistinguishable from the
-    anchor text. Copy and paste it into any Unicode-preserving medium
-    to transport the payload covertly.
-
-    **Size limits**
-
-    | Field          | Maximum      |
-    |----------------|-------------|
-    | anchor         | 10 000 chars |
-    | hidden_message |  1 000 chars |
-    """
+async def encode_endpoint(payload: EncodeRequest, http_request: Request) -> EncodeResponse:
+    """Embed *hidden_message* into *anchor* using invisible Plane 14 tag characters."""
     try:
-        result = encode(anchor=request.anchor, hidden_message=request.hidden_message)
+        result = encode(anchor=payload.anchor, hidden_message=payload.hidden_message)
     except InvalidPayloadError as exc:
+        _record_api_event(
+            http_request,
+            operation="encode",
+            severity="warning",
+            outcome="invalid_payload",
+            detail=str(exc),
+            anchor_length=len(payload.anchor),
+            payload_length=len(payload.hidden_message),
+            error_type="InvalidPayloadError",
+            reason="invalid_payload",
+        )
         raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
+        _record_api_event(
+            http_request,
+            operation="encode",
+            severity="warning",
+            outcome="rejected_input",
+            detail=str(exc),
+            anchor_length=len(payload.anchor),
+            payload_length=len(payload.hidden_message),
+            error_type="ValueError",
+            reason="invalid_input",
+        )
         raise HTTPException(status_code=400, detail=str(exc))
+
+    _record_api_event(
+        http_request,
+        operation="encode",
+        severity="info",
+        outcome="payload_encoded",
+        detail="Payload encoded and returned successfully.",
+        anchor_length=len(payload.anchor),
+        payload_length=len(payload.hidden_message),
+        reason="encode_success",
+    )
 
     return EncodeResponse(
         result=result,
-        anchor_length=len(request.anchor),
-        payload_length=len(request.hidden_message),
+        anchor_length=len(payload.anchor),
+        payload_length=len(payload.hidden_message),
         total_length=len(result),
     )
 
@@ -237,29 +354,50 @@ async def encode_endpoint(request: EncodeRequest) -> EncodeResponse:
     summary="Extract hidden payload from raw text",
     tags=["Codec"],
 )
-async def decode_endpoint(request: DecodeRequest) -> DecodeResponse:
-    """
-    Scan *raw_text* for an embedded Plane 14 tag payload.
-
-    Returns the extracted secret message if any Plane 14 codepoints are found.
-    Returns a clear ``found: false`` response with informative detail if the
-    input contains no tag characters.
-
-    A ``422`` error is returned if a tag codepoint decodes to an out-of-range
-    value, indicating a corrupted or synthetically crafted payload.
-    """
+async def decode_endpoint(payload: DecodeRequest, http_request: Request) -> DecodeResponse:
+    """Scan *raw_text* for an embedded Plane 14 tag payload."""
     try:
-        message = decode(request.raw_text)
+        message = decode(payload.raw_text)
     except InvalidPayloadError as exc:
+        _record_api_event(
+            http_request,
+            operation="decode",
+            severity="warning",
+            outcome="invalid_payload",
+            detail=str(exc),
+            anchor_length=len(payload.raw_text),
+            error_type="InvalidPayloadError",
+            reason="invalid_payload",
+        )
         raise HTTPException(status_code=422, detail=str(exc))
 
     if message is None:
+        _record_api_event(
+            http_request,
+            operation="decode",
+            severity="info",
+            outcome="no_payload_found",
+            detail="No Plane 14 tag payload detected in the provided text.",
+            anchor_length=len(payload.raw_text),
+            payload_length=0,
+            reason="no_payload_found",
+        )
         return DecodeResponse(
             found=False,
             message=None,
             detail="No Plane 14 tag payload detected in the provided text.",
         )
 
+    _record_api_event(
+        http_request,
+        operation="decode",
+        severity="info",
+        outcome="payload_found",
+        detail=f"Payload successfully extracted ({len(message)} characters).",
+        anchor_length=len(payload.raw_text),
+        payload_length=len(message),
+        reason="decode_success",
+    )
     return DecodeResponse(
         found=True,
         message=message,
@@ -282,6 +420,114 @@ async def health_check() -> HealthResponse:
     )
 
 
+@app.get(
+    "/v1/log",
+    response_model=LogQueryResponse,
+    summary="Query retained BlindTag operation events",
+    tags=["Operational"],
+)
+async def log_query_endpoint(
+    http_request: Request,
+    request_id: Optional[str] = Query(default=None),
+    operation: Optional[str] = Query(default=None),
+    level: Optional[str] = Query(default=None),
+    limit: int = Query(
+        default=reporting.DEFAULT_QUERY_LIMIT,
+        ge=1,
+        le=reporting.MAX_QUERY_LIMIT,
+    ),
+) -> LogQueryResponse:
+    """Return the newest retained events matching the provided filters."""
+    try:
+        items = reporting.query_events(
+            base_dir=_reporting_base_dir(http_request),
+            request_id=request_id,
+            operation=operation,
+            level=level,
+            limit=limit,
+        )
+    except reporting.ReportingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    _record_api_event(
+        http_request,
+        operation="log_query",
+        severity="info",
+        outcome="query_returned",
+        detail=f"Retained log query returned {len(items)} matching records.",
+        resolved_token_count=len(items),
+        reason="query_success",
+    )
+    return LogQueryResponse(
+        detail=f"Returned {len(items)} retained BlindTag event records.",
+        count=len(items),
+        limit=limit,
+        filters={
+            "request_id": request_id,
+            "operation": operation,
+            "level": level,
+            "limit": limit,
+        },
+        items=[OperationRecord(**item) for item in items],
+    )
+
+
+@app.post(
+    "/v1/log/export",
+    response_model=LogExportResponse,
+    summary="Export retained BlindTag operation evidence",
+    tags=["Operational"],
+)
+async def log_export_endpoint(payload: LogExportRequest, http_request: Request) -> LogExportResponse:
+    """Write a controlled retained-evidence export under the reporting root."""
+    try:
+        export_packet = reporting.export_events(
+            export_format=payload.format,
+            base_dir=_reporting_base_dir(http_request),
+            request_id=payload.request_id,
+            operation=payload.operation,
+            level=payload.level,
+            limit=payload.limit,
+            requester_id=payload.requester_id,
+            scope=payload.scope,
+            expires_at=payload.expires_at,
+            signature=payload.signature,
+        )
+    except reporting.ExportAuthorizationError as exc:
+        _record_api_event(
+            http_request,
+            operation="log_export",
+            severity="warning",
+            outcome="export_denied",
+            detail=str(exc),
+            error_type="ExportAuthorizationError",
+            reason="export_authorization_failed",
+        )
+        raise HTTPException(status_code=403, detail=str(exc))
+    except reporting.ReportingError as exc:
+        _record_api_event(
+            http_request,
+            operation="log_export",
+            severity="error",
+            outcome="export_failed",
+            detail=str(exc),
+            error_type="ReportingError",
+            reason="export_failed",
+        )
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    _record_api_event(
+        http_request,
+        operation="log_export",
+        severity="info",
+        outcome="export_written",
+        detail=f"Retained export wrote {export_packet['record_count']} records as {payload.format}.",
+        resolved_token_count=export_packet["record_count"],
+        reason="export_success",
+    )
+    return LogExportResponse(**export_packet)
+
+
 # ─── Programmatic server launch ───────────────────────────────────────────────
 
 def run_server(
@@ -290,18 +536,7 @@ def run_server(
     reload: bool = False,
     log_level: str = "info",
 ) -> None:
-    """
-    Launch the BlindTag FastAPI server via Uvicorn.
-
-    Always binds to localhost by default to prevent unintended exposure.
-    Pass ``host="0.0.0.0"`` only in explicitly controlled environments.
-
-    Args:
-        host:      Bind address. Default: "127.0.0.1" (loopback only).
-        port:      TCP port. Default: 8000.
-        reload:    Enable Uvicorn hot-reload (development mode).
-        log_level: Uvicorn log verbosity ("debug", "info", "warning", "error").
-    """
+    """Launch the BlindTag FastAPI server via Uvicorn."""
     uvicorn.run(
         "blindtag.api:app",
         host=host,

@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Pass J reporting substrate** — `blindtag/reporting.py` introduces a bounded JSONL-first retained operation ledger under `.blindtag/generated/reporting/`, controlled JSON/Markdown export packets with manifest/checksum sidecars, and optional privileged export signing via explicit shared-key request verification (calamum `20260531T230143Z-blindtag-reporting`, adjacent `20260531T230200Z-blindtag-api`, `20260531T230620Z-blindtag-cli`, full-suite `20260531T230637Z-blindtag-all`)
 - **Unified CLI** (`blindtag.cli`) — `blindtag` root entry point with `encode`, `decode`, `strip`, `api`, and `widget` subcommands; `--out {text,json}` flag; stdin piping via `-`; locked exit-code contract (0 success, 1 domain error, 2 usage error); see [docs/CLI_SCHEMA.md](docs/CLI_SCHEMA.md) (Pass C — `69cdda4`)
 - `blindtag/__main__.py` — enables `python -m blindtag` invocation (Pass C — `69cdda4`)
 - `blindtag-api` and `blindtag-widget` console scripts demoted to compat shims delegating to `blindtag.cli` (Pass C — `69cdda4`)
@@ -22,6 +23,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `TAG_CANCEL` round-trip assertion fix in `tests/test_core.py` (Pass B — `5a7daf9`)
 
 ### Fixed
+- BlindTag CLI global logging bootstrap now ships: root `--log-level` and `--verbose` flags configure runtime logging without import-time handler attachment, while the widget path remains pinned to warning-level logging
+- BlindTag API request correlation now uses a single per-request `X-Request-Id` value for both the response header and retained event records, so `/v1/log` can filter by the exact request that produced an encode/decode event
+- Hidden background-posture relaunch anchor now fires immediately when the widget is hidden with Clip Watch active, so the operator gets the promised click-to-return notification before any later hidden payload hit replaces it (calamum `20260531T220215Z-blindtag-widget`, full-suite confirmation `20260531T220238Z-blindtag-all`)
+- CLI confirmation surfaces now emit friendly structured stderr blocks for human runs while preserving clean stdout for text and JSON result contracts; handled CLI errors now include a structured next-action block, and launcher commands (`blindtag api`, `blindtag widget`) report a clearer handoff/start summary (calamum `20260531T214710Z-blindtag-cli`, full-suite confirmation `20260531T214732Z-blindtag-all`)
 - Stale `run_widget.py` docstring: replaced `customtkinter`/`pyperclip`/Linux xclip references with PySide6 requirements (Pass C — `69cdda4`)
 - Stale `blindtag/__init__.py` module docstring: widget description updated from `(customtkinter)` to `(PySide6)` (Pass C — `69cdda4`)
 - `README.md`: architecture block and Linux clipboard section updated to reflect PySide6 rewrite (planning pass — `3ab3a26`)
@@ -99,7 +104,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `tests/test_widget.py`: added helper coverage for glyph/code parsing and display, library-editor add-row behavior, single-action button contract, and persistent hidden notification anchor behavior
 - `catalog/test_definitions.json`: `blindtag-widget` notes updated to reflect Pass M coverage
 
-**Pass N** — IMPLEMENTED (calamum `20260531T085159Z-blindtag-all`, `decision: go`; live operator re-verification pending):
+**Pass N** — COMPLETE (initial Calamum gate `20260531T085159Z-blindtag-all`, later hidden-notification closure confirmed by `20260531T220238Z-blindtag-all`; operator live pass recorded 2026-05-31):
 - Root CLI widget launchpoint restored as a supported compatibility launcher; in installed environments it should hand off to the dedicated `blindtag-widget` GUI surface instead of staying attached to the calling terminal
 - `blindtag.cli._widget_shim` no longer delegates through the root parser; it launches the widget directly and rejects unsupported arguments
 - Hidden notification window flags and show path hardened for Windows visibility (`Qt.WindowDoesNotAcceptFocus`, direct top-level launch path, `showNormal()`)
@@ -108,6 +113,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `tests/test_cli.py`: root CLI widget launchpoint, dedicated widget-shim direct-launch, and argument-rejection contract covered
 - `tests/test_widget.py`: added coverage for deleted notification recreation / close-path tolerance and updated compact top-toggle geometry contract
 - `README.md`, `docs/CLI_SCHEMA.md`, and `catalog/test_definitions.json` updated to reflect the dedicated terminal-free widget surface, the restored CLI compatibility launcher, and the new Pass N regression boundaries
+
+**Pass O** — COMPLETE (calamum `20260531T202826Z-blindtag-all`, `decision: go`; installed live operator pass recorded 2026-05-31):
+- `BlindTagWindow` now retains the exact encoded composite in `_last_encoded_payload` and clears stale encode output/source state before every new encode attempt
+- `_encode_and_copy()` now copies from the in-memory source of truth instead of re-reading only from the output widget, preventing stale-output false copies after failed encode attempts
+- Clipboard writes now use bounded verification before success is reported; failure to verify produces a calm warning directing the operator to retry or copy manually from Output
+- `_btn_ghost_style()` and `_EmojiFlyout` glyph cells now include explicit `:pressed` states so clicks read as real activation instead of hover-only motion
+- `tests/test_widget.py`: added focused `TestClipboardTruthfulness` and `TestPressedStateStyling` coverage for verified copy success, stale clipboard refusal, and pressed-state style presence
+- `catalog/test_definitions.json`: widget notes updated to include Pass O clipboard-truthfulness and pressed-state coverage
+
+**Pass O.12 follow-up UI closure** — COMPLETE (calamum `20260531T210626Z-blindtag-all`, `decision: go`; installed live operator pass recorded 2026-05-31):
+
+**Pass O.13 hide-anchor closure** — COMPLETE (calamum `20260531T220215Z-blindtag-widget`, full-suite confirmation `20260531T220238Z-blindtag-all`; operator live pass recorded 2026-05-31):
+- `_hide_to_background()` now emits the persistent relaunch anchor immediately when the widget is hidden with Clip Watch active
+- The hide-time relaunch anchor remains replaceable by later hidden payload notifications so the freshest hidden event still wins
+- Retained artifact checksum verification succeeded for both runs; signing-env remained names-only absent (`CALAMUM_ED25519_PUBLIC_KEY=missing`, `CALAMUM_POLICY_SIGNING_KEY=missing`)
+- Emoji flyout trigger now behaves as a true toggle: click once to open, click again to close
+- Emoji flyout dismissal now supports conventional click-away closing through a broader application-level mouse filter
+- Help drawer now raises the widget to full opacity while open and adds a dim scrim across the rest of the widget body for legibility
+- Help cards now render on more opaque elevated surfaces for stronger text/background separation
+- Ghost/menu pressed states and emoji-cell pressed states strengthened with a darker filled state and visible accent border so activation reads more clearly in live use
+- Emoji selection now leaves the pressed state visible for a short paint cycle before dismissing the flyout
+- `tests/test_widget.py`: added focused coverage for help scrim/opacity behavior, trigger-toggle flyout close behavior, and click-away dismissal
+
+**Pass J** — COMPLETE (calamum `20260531T230143Z-blindtag-reporting`, adjacent reruns `20260531T230200Z-blindtag-api`, `20260531T230620Z-blindtag-cli`, full-suite `20260531T230637Z-blindtag-all`, all `decision: go`):
+- `blindtag/reporting.py` (NEW) — append-only JSONL retained event store, read-only filter/query helpers, controlled JSON/Markdown export artifact families, checksum sidecars, and optional privileged shared-key export verification
+- `blindtag/api.py` — `X-Request-Id` continuity now survives into retained event records; API-owned encode/decode/query/export events are persisted locally; new `GET /v1/log` and `POST /v1/log/export` surfaces added
+- `blindtag/cli.py` — global `--log-level` and `--verbose` bootstrap shipped; widget route remains pinned to warning-level logging regardless of root flag
+- `blindtag/core.py` — quiet module logger reservation added with no import-time handler attachment
+- `tests/test_reporting.py` (NEW) — focused retained store / export / signing coverage
+- `tests/test_api.py` — new reporting endpoint coverage and fail-closed export trust gate coverage
+- `tests/test_cli.py` — root logging flag coverage added, including widget warning-level override behavior
+- `.gitignore` — `.blindtag/` retained reporting outputs kept local-only
+- `catalog/test_definitions.json` — `blindtag-reporting` Calamum definition added
 
 **Pass H** — COMPLETE (commit `d2415ca`, calamum `20260531T020332Z-blindtag-all`, `decision: go`):
 - `_resolve_anchor_tokens(text, library)` — new module-level pure function; resolves `U+XXXX` tokens to Unicode chars (with invalid codepoint / surrogate pass-through safety) and `:alias:` tokens to glyphs via library lookup; bare uppercase excluded to prevent natural-language collisions; headless-testable with no Qt dependency
