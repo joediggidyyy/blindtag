@@ -2855,7 +2855,9 @@ Default mode should, at minimum:
 - install the normal BlindTag package surface;
 - install the widget launch surface expected for terminal-free use;
 - include the runtime asset set required by the widget and packaged documentation references;
+- verify the bundled BlindTag payload against installer-owned integrity hashes before installation and fail closed on mismatch;
 - automatically satisfy prerequisite/runtime dependencies that ordinary Windows users should not be asked to manage manually, including Python installation when Python is absent;
+- trust-check downloaded Python bootstrap installers before execution;
 - own any required elevation handoff so the operator burden stays near `click OK` instead of `open a terminal and do setup work`;
 - make the ordinary post-install launch path obvious;
 - preserve a calm, low-friction install flow.

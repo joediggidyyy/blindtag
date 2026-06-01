@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 import shutil
@@ -48,6 +49,8 @@ PYTHON_MIN_VERSION = "3.11"
 PYTHON_BOOTSTRAP_VERSION = "3.12.10"
 PYTHON_BOOTSTRAP_WINGET_ID = "Python.Python.3.12"
 PYTHON_BOOTSTRAP_URL = f"https://www.python.org/ftp/python/{PYTHON_BOOTSTRAP_VERSION}/python-{PYTHON_BOOTSTRAP_VERSION}-amd64.exe"
+PYTHON_BOOTSTRAP_SIGNER_SUBSTRING = "Python Software Foundation"
+SECURITY_MANIFEST_FILENAME = "installer_security_manifest.json"
 
 
 def _payload_root() -> Path | None:
@@ -71,6 +74,10 @@ SHORTCUT_ICON_SOURCE = _resolve_payload_file(
     "blindtag_thumbnail_basic.png",
     REPO_ROOT / "assets" / "images" / "blindtag_thumbnail_basic.png",
 )
+SECURITY_MANIFEST_SOURCE = _resolve_payload_file(
+    SECURITY_MANIFEST_FILENAME,
+    REPO_ROOT / "report_tmp" / "windows_installer_build" / SECURITY_MANIFEST_FILENAME,
+)
 
 
 @dataclass(frozen=True)
@@ -88,9 +95,11 @@ class InstallerPlan:
     widget_launcher: str
     cli_launcher: str
     install_manifest_path: str
+    security_manifest_path: str
     auto_install_python: bool
     automatic_elevation: bool
     python_bootstrap_strategy: str
+    verify_payload_hashes: bool
 
 
 def find_latest_wheel(search_roots: list[Path] | None = None) -> Path | None:
@@ -152,9 +161,11 @@ def build_install_plan(
         widget_launcher=str(widget_launcher),
         cli_launcher=str(cli_launcher),
         install_manifest_path=str(manifest_path),
+        security_manifest_path=str(SECURITY_MANIFEST_SOURCE),
         auto_install_python=True,
         automatic_elevation=True,
         python_bootstrap_strategy="automatic-python-bootstrap",
+        verify_payload_hashes=True,
     )
 
 
@@ -179,6 +190,12 @@ def build_contract_summary() -> dict[str, Any]:
         "options": INSTALLER_OPTION_SPECS,
         "default_install_dir": str(DEFAULT_INSTALL_DIR),
         "wheel_found": str(find_latest_wheel()) if find_latest_wheel() else None,
+        "security": {
+            "payload_hash_verification": True,
+            "security_manifest_path": str(SECURITY_MANIFEST_SOURCE),
+            "python_bootstrap_signature_validation": True,
+            "fail_closed_on_integrity_mismatch": True,
+        },
         "bootstrap": {
             "auto_python_install": True,
             "python_min_version": PYTHON_MIN_VERSION,
@@ -186,6 +203,61 @@ def build_contract_summary() -> dict[str, Any]:
             "automatic_elevation": True,
             "behavior": "Installer resolves Python/runtime dependencies automatically and requests Windows elevation only when required.",
         },
+    }
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _load_security_manifest(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _verify_payload_integrity(plan: InstallerPlan) -> dict[str, Any]:
+    manifest_path = Path(plan.security_manifest_path)
+    if not manifest_path.exists():
+        raise RuntimeError(f"Installer security manifest not found: {manifest_path}")
+
+    manifest = _load_security_manifest(manifest_path)
+    manifest_hashes = manifest.get("payload_hashes")
+    if not isinstance(manifest_hashes, dict):
+        raise RuntimeError("Installer security manifest is missing payload_hashes.")
+
+    payload_map: dict[str, Path] = {
+        "wheel": Path(plan.wheel_path),
+        "readme": Path(plan.readme_path),
+    }
+    if SHORTCUT_ICON_SOURCE.exists():
+        payload_map["icon"] = SHORTCUT_ICON_SOURCE
+
+    verified_items: dict[str, dict[str, str]] = {}
+    for key, path in payload_map.items():
+        expected_entry = manifest_hashes.get(key)
+        if not isinstance(expected_entry, dict):
+            raise RuntimeError(f"Installer security manifest is missing the {key} payload entry.")
+        expected_hash = str(expected_entry.get("sha256") or "").strip().lower()
+        if not expected_hash:
+            raise RuntimeError(f"Installer security manifest is missing the {key} sha256 value.")
+        actual_hash = _sha256(path)
+        if actual_hash.lower() != expected_hash:
+            raise RuntimeError(
+                f"{key.capitalize()} hash verification failed for {path.name}. Expected {expected_hash}, received {actual_hash}."
+            )
+        verified_items[key] = {
+            "path": str(path),
+            "sha256": actual_hash,
+        }
+
+    return {
+        "manifest_path": str(manifest_path),
+        "verified": True,
+        "manifest_version": manifest.get("manifest_version"),
+        "verified_items": verified_items,
     }
 
 
@@ -307,6 +379,33 @@ def _download_python_bootstrap_installer() -> Path:
     return target
 
 
+def _verify_bootstrap_installer_signature(installer_path: Path) -> dict[str, str]:
+    command_text = (
+        "$sig = Get-AuthenticodeSignature -FilePath '"
+        + str(installer_path).replace("'", "''")
+        + "'; "
+        + "[pscustomobject]@{Status=[string]$sig.Status; Subject=[string]$sig.SignerCertificate.Subject; Issuer=[string]$sig.SignerCertificate.Issuer} | ConvertTo-Json -Compress"
+    )
+    completed = _run_command_result(["powershell", "-NoProfile", "-Command", command_text])
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "Bootstrap signature validation failed")
+    payload = json.loads((completed.stdout or "{}").strip() or "{}")
+    status = str(payload.get("Status") or "")
+    subject = str(payload.get("Subject") or "")
+    if status != "Valid":
+        raise RuntimeError(f"Bootstrap installer signature is not valid. Status: {status or 'unknown'}")
+    if PYTHON_BOOTSTRAP_SIGNER_SUBSTRING.lower() not in subject.lower():
+        raise RuntimeError(
+            "Bootstrap installer signer is not trusted. "
+            f"Expected signer containing '{PYTHON_BOOTSTRAP_SIGNER_SUBSTRING}', received '{subject or 'unknown'}'."
+        )
+    return {
+        "status": status,
+        "subject": subject,
+        "issuer": str(payload.get("Issuer") or ""),
+    }
+
+
 def _install_python_with_winget() -> bool:
     if not _command_available(["winget", "--version"]):
         return False
@@ -332,6 +431,7 @@ def _install_python_with_winget() -> bool:
 
 def _install_python_from_bootstrap_installer() -> bool:
     installer_path = _download_python_bootstrap_installer()
+    _verify_bootstrap_installer_signature(installer_path)
     user_command = [
         str(installer_path),
         "/quiet",
@@ -420,6 +520,7 @@ def perform_install(plan: InstallerPlan, *, dry_run: bool = False) -> dict[str, 
         "runtime_dir": str(runtime_dir),
         "wheel_path": plan.wheel_path,
         "readme_source": plan.readme_path,
+        "security_manifest_path": plan.security_manifest_path,
         "widget_launcher": plan.widget_launcher,
         "create_shortcut": plan.create_shortcut,
         "enable_quick_launch": plan.enable_quick_launch,
@@ -427,10 +528,12 @@ def perform_install(plan: InstallerPlan, *, dry_run: bool = False) -> dict[str, 
         "auto_install_python": plan.auto_install_python,
         "automatic_elevation": plan.automatic_elevation,
         "python_bootstrap_strategy": plan.python_bootstrap_strategy,
+        "verify_payload_hashes": plan.verify_payload_hashes,
     }
     if dry_run:
         return {"status": "dry-run", "actions": actions}
 
+    integrity_result = _verify_payload_integrity(plan)
     python_cmd, bootstrap_result = ensure_python_runtime()
     install_root.mkdir(parents=True, exist_ok=True)
     shutil.copy2(plan.readme_path, readme_target)
@@ -458,6 +561,8 @@ def perform_install(plan: InstallerPlan, *, dry_run: bool = False) -> dict[str, 
         },
         "wheel_path": plan.wheel_path,
         "readme_path": str(readme_target),
+        "security_manifest_path": plan.security_manifest_path,
+        "payload_integrity": integrity_result,
         "python_bootstrap": bootstrap_result,
     }
     Path(plan.install_manifest_path).write_text(json.dumps(manifest, indent=2), encoding="utf-8")

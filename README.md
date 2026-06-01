@@ -103,6 +103,8 @@ Installer contract highlights:
 - **Default (Recommended)** — aimed at recreational/everyday BlindTag use
 - **Advanced** — custom setup path with explicit cautionary language
 - The installer automatically satisfies the Python/runtime prerequisite lane when needed and only asks Windows for elevation when that setup truly requires it
+- The release installer verifies the bundled wheel/README/icon payload hashes before installation and fails closed if the packaged payload no longer matches the installer security manifest
+- Downloaded Python bootstrap installers are trust-checked before execution
 - Required options:
   - `Create shortcut`
   - `Enable quick launch`

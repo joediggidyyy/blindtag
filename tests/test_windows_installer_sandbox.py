@@ -10,12 +10,13 @@ class TestWindowsInstallerSandboxValidation:
     def test_generate_sandbox_validation_report_passes_all_scenarios(self, tmp_path: Path) -> None:
         report = generate_sandbox_validation_report(tmp_path)
 
-        assert report["scenario_count"] == 4
-        assert report["passed_scenarios"] == 4
+        assert report["scenario_count"] == 5
+        assert report["passed_scenarios"] == 5
         assert report["all_scenarios_passed"] is True
         assert report["handoff_summary"]["default_mode_ready"] is True
         assert report["handoff_summary"]["bootstrap_ready"] is True
         assert report["handoff_summary"]["fail_closed_confirmed"] is True
+        assert report["handoff_summary"]["hash_mismatch_fail_closed_confirmed"] is True
 
     def test_write_sandbox_validation_report_emits_json_and_markdown(self, tmp_path: Path) -> None:
         paths = write_sandbox_validation_report(tmp_path)
@@ -32,4 +33,5 @@ class TestWindowsInstallerSandboxValidation:
         assert payload["all_scenarios_passed"] is True
         assert markdown.startswith("TL;DR:")
         assert "default_existing_python" in markdown
+        assert "wheel_hash_mismatch_fail_closed" in markdown
         assert "next-actions:" in markdown

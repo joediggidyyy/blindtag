@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -21,6 +21,7 @@ class SandboxScenario:
     display_readme: bool
     bootstrap_result: dict[str, Any] | None = None
     expected_failure: str | None = None
+    tamper_wheel_hash: bool = False
 
 
 SCENARIOS: tuple[SandboxScenario, ...] = (
@@ -60,6 +61,17 @@ SCENARIOS: tuple[SandboxScenario, ...] = (
         display_readme=True,
         expected_failure="BlindTag could not bootstrap Python 3.11+ automatically.",
     ),
+    SandboxScenario(
+        name="wheel_hash_mismatch_fail_closed",
+        description="Installer fails closed when the bundled wheel hash no longer matches the installer security manifest.",
+        mode=windows_installer.INSTALL_MODE_DEFAULT,
+        create_shortcut=True,
+        enable_quick_launch=True,
+        display_readme=True,
+        bootstrap_result={"method": "existing-python", "elevated": False},
+        expected_failure="Wheel hash verification failed",
+        tamper_wheel_hash=True,
+    ),
 )
 
 
@@ -93,6 +105,23 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _write_security_manifest(manifest_path: Path, wheel_path: Path, readme_path: Path, icon_path: Path, *, tamper_wheel_hash: bool = False) -> Path:
+    wheel_hash = _sha256(wheel_path)
+    if tamper_wheel_hash:
+        wheel_hash = "0" * 64
+    payload = {
+        "manifest_version": 1,
+        "payload_hashes": {
+            "wheel": {"name": wheel_path.name, "sha256": wheel_hash},
+            "readme": {"name": readme_path.name, "sha256": _sha256(readme_path)},
+            "icon": {"name": icon_path.name, "sha256": _sha256(icon_path)},
+        },
+    }
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return manifest_path
+
+
 def _scenario_sources(sandbox_root: Path, scenario: SandboxScenario) -> tuple[Path, Path, Path]:
     source_root = sandbox_root / "sources"
     wheel_path = _touch_binary(source_root / f"blindtag-{scenario.name}.whl", content=f"wheel:{scenario.name}".encode("utf-8"))
@@ -103,6 +132,13 @@ def _scenario_sources(sandbox_root: Path, scenario: SandboxScenario) -> tuple[Pa
 
 def _simulate_install_scenario(scenario: SandboxScenario, sandbox_root: Path) -> dict[str, Any]:
     wheel_path, readme_path, icon_path = _scenario_sources(sandbox_root, scenario)
+    security_manifest_path = _write_security_manifest(
+        sandbox_root / windows_installer.SECURITY_MANIFEST_FILENAME,
+        wheel_path,
+        readme_path,
+        icon_path,
+        tamper_wheel_hash=scenario.tamper_wheel_hash,
+    )
     install_root = sandbox_root / "install-root"
     desktop_shortcut = sandbox_root / "Desktop" / "BlindTag.lnk"
     quick_launch_shortcut = sandbox_root / "QuickLaunch" / "BlindTag.lnk"
@@ -140,7 +176,8 @@ def _simulate_install_scenario(scenario: SandboxScenario, sandbox_root: Path) ->
         return True
 
     def fake_ensure_python_runtime() -> tuple[list[str], dict[str, Any]]:
-        if scenario.expected_failure is not None:
+        if scenario.bootstrap_result is None:
+            assert scenario.expected_failure is not None
             raise RuntimeError(scenario.expected_failure)
         assert scenario.bootstrap_result is not None
         return ["C:/Python312/python.exe"], dict(scenario.bootstrap_result)
@@ -153,6 +190,12 @@ def _simulate_install_scenario(scenario: SandboxScenario, sandbox_root: Path) ->
         display_readme=scenario.display_readme,
         wheel_path=wheel_path,
         readme_path=readme_path,
+    )
+    install_plan = type(install_plan)(
+        **{
+            **asdict(install_plan),
+            "security_manifest_path": str(security_manifest_path),
+        }
     )
 
     success = False
@@ -189,6 +232,7 @@ def _simulate_install_scenario(scenario: SandboxScenario, sandbox_root: Path) ->
         "quick_launch_present": quick_launch_shortcut.exists(),
         "install_manifest_present": manifest_path.exists(),
         "python_bootstrap_method": None if manifest_data is None else manifest_data.get("python_bootstrap", {}).get("method"),
+        "payload_integrity_verified": False if manifest_data is None else bool(manifest_data.get("payload_integrity", {}).get("verified")),
     }
 
     if scenario.expected_failure is not None:
@@ -219,6 +263,7 @@ def _simulate_install_scenario(scenario: SandboxScenario, sandbox_root: Path) ->
         "shortcut_log": shortcut_log,
         "browser_log": browser_log,
         "manifest": manifest_data,
+        "security_manifest_path": str(security_manifest_path),
     }
 
 
@@ -260,6 +305,10 @@ def generate_sandbox_validation_report(output_root: Path | None = None) -> dict[
             ),
             "fail_closed_confirmed": any(
                 result["name"] == "missing_python_fail_closed" and result["handoff"]["status"] == "blocked"
+                for result in scenario_results
+            ),
+            "hash_mismatch_fail_closed_confirmed": any(
+                result["name"] == "wheel_hash_mismatch_fail_closed" and result["handoff"]["status"] == "blocked"
                 for result in scenario_results
             ),
         },
@@ -307,6 +356,7 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             f"- default_mode_ready: `{report['handoff_summary']['default_mode_ready']}`",
             f"- bootstrap_ready: `{report['handoff_summary']['bootstrap_ready']}`",
             f"- fail_closed_confirmed: `{report['handoff_summary']['fail_closed_confirmed']}`",
+            f"- hash_mismatch_fail_closed_confirmed: `{report['handoff_summary']['hash_mismatch_fail_closed_confirmed']}`",
             "",
             "next-actions: NOW WE ARE GOING TO use this sandbox evidence packet as the Phase 4 installer-validation receipt for BlindTag's packaging/publication lane.",
         ]

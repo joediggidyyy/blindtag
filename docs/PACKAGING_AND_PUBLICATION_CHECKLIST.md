@@ -91,8 +91,10 @@ This checklist is grounded in:
 - [ ] Default mode installs the standard BlindTag package surface.
 - [ ] Default mode installs the terminal-free widget launch surface.
 - [ ] Default mode includes the runtime asset set required by widget behavior and packaged docs.
+- [ ] The installer validates the bundled package payload hashes automatically and fails closed on any integrity mismatch.
 - [ ] Default mode installs Python automatically when missing and satisfies package/runtime dependencies without manual terminal work.
 - [ ] The installer auto-elevates only when Windows prerequisite setup genuinely requires elevated execution.
+- [ ] Downloaded Python bootstrap installers are trust-checked before execution.
 - [ ] Advanced mode exposes custom install choices without making Default ambiguous.
 - [ ] Installer copy makes the ordinary post-install launch path obvious.
 
@@ -115,6 +117,7 @@ This checklist is grounded in:
 - [ ] Validate `Display README.md after install` behavior.
 - [ ] Validate the missing-Python bootstrap lane or a faithful simulation of that lane.
 - [ ] Validate that elevation prompts appear only when prerequisite setup genuinely needs them.
+- [ ] Validate package-hash mismatch fail-closed behavior in the sandbox simulation/report packet.
 - [ ] Validate output content and handoff-completion posture, not just process exit codes.
 - [ ] Record retained evidence for the sandbox results.
 - [ ] Emit names-only sandbox evidence artifacts (JSON + Markdown) under `report_tmp/windows_installer_sandbox_validation/` so the scenario simulation and handoff packet are preserved.

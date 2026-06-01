@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,6 +14,9 @@ from installer_app.windows_installer import (
     INSTALLER_OPTION_SPECS,
     INSTALL_MODE_ADVANCED,
     INSTALL_MODE_DEFAULT,
+    SECURITY_MANIFEST_FILENAME,
+    _verify_payload_integrity,
+    _verify_bootstrap_installer_signature,
     ensure_python_runtime,
     build_contract_summary,
     build_install_plan,
@@ -41,8 +47,10 @@ class TestWindowsInstallerContract:
         assert plan.recommended is True
         assert plan.install_dir == str(DEFAULT_INSTALL_DIR)
         assert plan.widget_launcher.endswith("blindtag-widget.exe")
+        assert plan.security_manifest_path.endswith(SECURITY_MANIFEST_FILENAME)
         assert plan.auto_install_python is True
         assert plan.automatic_elevation is True
+        assert plan.verify_payload_hashes is True
 
     def test_validate_install_plan_flags_missing_wheel(self, tmp_path: Path) -> None:
         readme = tmp_path / "README.md"
@@ -66,8 +74,100 @@ class TestWindowsInstallerContract:
         assert INSTALL_MODE_DEFAULT in summary["modes"]
         assert INSTALL_MODE_ADVANCED in summary["modes"]
         assert len(summary["options"]) == 3
+        assert summary["security"]["payload_hash_verification"] is True
+        assert summary["security"]["python_bootstrap_signature_validation"] is True
         assert summary["bootstrap"]["auto_python_install"] is True
         assert summary["bootstrap"]["automatic_elevation"] is True
+
+    def test_verify_payload_integrity_accepts_matching_hashes(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        wheel = tmp_path / "blindtag.whl"
+        wheel.write_bytes(b"wheel")
+        readme = tmp_path / "README.md"
+        readme.write_text("hello", encoding="utf-8")
+        monkeypatch.setattr("installer_app.windows_installer.SHORTCUT_ICON_SOURCE", tmp_path / "missing-icon.png")
+        manifest = tmp_path / SECURITY_MANIFEST_FILENAME
+        manifest.write_text(
+            json.dumps(
+                {
+                    "manifest_version": 1,
+                    "payload_hashes": {
+                        "wheel": {"sha256": hashlib.sha256(b"wheel").hexdigest()},
+                        "readme": {"sha256": hashlib.sha256(readme.read_bytes()).hexdigest()},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        plan = build_install_plan(wheel_path=wheel, readme_path=readme)
+        plan = type(plan)(**{**plan.__dict__, "security_manifest_path": str(manifest)})
+
+        result = _verify_payload_integrity(plan)
+
+        assert result["verified"] is True
+        assert result["verified_items"]["wheel"]["sha256"]
+
+    def test_verify_payload_integrity_rejects_hash_mismatch(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        wheel = tmp_path / "blindtag.whl"
+        wheel.write_bytes(b"wheel")
+        readme = tmp_path / "README.md"
+        readme.write_text("hello", encoding="utf-8")
+        monkeypatch.setattr("installer_app.windows_installer.SHORTCUT_ICON_SOURCE", tmp_path / "missing-icon.png")
+        manifest = tmp_path / SECURITY_MANIFEST_FILENAME
+        manifest.write_text(
+            json.dumps(
+                {
+                    "manifest_version": 1,
+                    "payload_hashes": {
+                        "wheel": {"sha256": "0" * 64},
+                        "readme": {"sha256": hashlib.sha256(readme.read_bytes()).hexdigest()},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        plan = build_install_plan(wheel_path=wheel, readme_path=readme)
+        plan = type(plan)(**{**plan.__dict__, "security_manifest_path": str(manifest)})
+
+        with pytest.raises(RuntimeError, match="Wheel hash verification failed"):
+            _verify_payload_integrity(plan)
+
+    def test_verify_bootstrap_installer_signature_accepts_valid_python_org_signature(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        installer = tmp_path / "python-installer.exe"
+        installer.write_bytes(b"bootstrap")
+        payload = json.dumps(
+            {
+                "Status": "Valid",
+                "Subject": "CN=Python Software Foundation, O=Python Software Foundation, L=Beaverton, S=Oregon, C=US",
+                "Issuer": "CN=Trusted CA",
+            }
+        )
+        monkeypatch.setattr(
+            "installer_app.windows_installer._run_command_result",
+            lambda command: subprocess.CompletedProcess(command, 0, stdout=payload, stderr=""),
+        )
+
+        result = _verify_bootstrap_installer_signature(installer)
+
+        assert result["status"] == "Valid"
+        assert "Python Software Foundation" in result["subject"]
+
+    def test_verify_bootstrap_installer_signature_rejects_untrusted_signer(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        installer = tmp_path / "python-installer.exe"
+        installer.write_bytes(b"bootstrap")
+        payload = json.dumps(
+            {
+                "Status": "Valid",
+                "Subject": "CN=Unexpected Signer",
+                "Issuer": "CN=Trusted CA",
+            }
+        )
+        monkeypatch.setattr(
+            "installer_app.windows_installer._run_command_result",
+            lambda command: subprocess.CompletedProcess(command, 0, stdout=payload, stderr=""),
+        )
+
+        with pytest.raises(RuntimeError, match="signer is not trusted"):
+            _verify_bootstrap_installer_signature(installer)
 
     def test_ensure_python_runtime_bootstraps_when_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         discoveries = iter([None, ["C:/Python312/python.exe"]])
