@@ -2855,6 +2855,8 @@ Default mode should, at minimum:
 - install the normal BlindTag package surface;
 - install the widget launch surface expected for terminal-free use;
 - include the runtime asset set required by the widget and packaged documentation references;
+- automatically satisfy prerequisite/runtime dependencies that ordinary Windows users should not be asked to manage manually, including Python installation when Python is absent;
+- own any required elevation handoff so the operator burden stays near `click OK` instead of `open a terminal and do setup work`;
 - make the ordinary post-install launch path obvious;
 - preserve a calm, low-friction install flow.
 
@@ -2889,11 +2891,13 @@ This is the required release order for BlindTag once code remediation begins:
 3. **Build the Windows installer artifact**
     - produce the `.exe` installer for widget-based operations;
     - verify that installer content matches the packaged product surface rather than a source-tree-only layout;
+    - verify bundled and/or online bootstrap behavior for missing Python prerequisites remains truthful and installer-owned;
     - verify the required mode/options contract is present.
 
 4. **Run sandbox install validation**
     - test the installer in a sandboxed/simulated environment;
     - validate output content, installed surface truthfulness, and handoff completion posture;
+    - validate the missing-Python lane and any required elevation handoff;
     - verify the widget launch path, shortcuts, quick-launch behavior, and README display option behave as claimed.
 
 5. **Run the publication staging lane**
@@ -2914,9 +2918,10 @@ The packaging/publication lane is complete only when all of the following are tr
 3. Packaged README/metadata render truthfully at the top of the shipped distribution surface.
 4. The Windows `.exe` installer exists and matches the locked Default-vs-Advanced experience contract.
 5. The installer exposes `Create shortcut`, `Enable quick launch`, and `Display README.md after install` as explicit options.
-6. Sandbox install validation proves content, launch path, and handoff posture rather than acting as a smoke-only ritual.
-7. TestPyPI publication and install validation complete before any production upload.
-8. Final package/publication judgment cites retained build/install/publication evidence rather than informal confidence.
+6. Default-mode Windows installation remains effectively zero-burden for ordinary users: the installer owns prerequisite setup, including Python bootstrap when needed, and only escalates with Windows permission prompts when actually required.
+7. Sandbox install validation proves content, launch path, and handoff posture rather than acting as a smoke-only ritual.
+8. TestPyPI publication and install validation complete before any production upload.
+9. Final package/publication judgment cites retained build/install/publication evidence rather than informal confidence.
 
 ---
 

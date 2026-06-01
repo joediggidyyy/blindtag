@@ -65,6 +65,8 @@ def build_installer() -> Path:
         f"{README_SOURCE};payload",
     ]
     if ICON_PATH.exists():
+        command.extend(["--add-data", f"{ICON_PATH};payload"])
+    if ICON_PATH.exists():
         command.extend(["--icon", str(ICON_PATH)])
     command.append(str(SCRIPT_PATH))
 

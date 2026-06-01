@@ -1,7 +1,6 @@
 # ⬡ BlindTag
 
-<p
-="center">,k.$$\\\\\\\\\\\\\7\
+<p align="center">
   <img src="assets/images/blindtag_logo.png" alt="BlindTag" width="180">
 </p>
 
@@ -17,7 +16,7 @@ As of 2026-05-31, BlindTag also ships a bounded local-only retained reporting su
 
 ## Architecture
 
-```
+```text
 blindtag/
 ├── blindtag/
 │   ├── __init__.py        Public API surface
@@ -26,10 +25,9 @@ blindtag/
 │   ├── reporting.py       Retained JSONL event store + export helpers
 │   ├── widget.py          Desktop observer widget (PySide6)
 │   └── exceptions.py      Domain exception hierarchy
-├── tests/
-│   ├── test_core.py       Core engine unit tests (pytest)
-│   ├── test_api.py        API endpoint integration tests
-│   └── test_reporting.py  Retained reporting / export tests
+├── assets/                Runtime/documentation assets
+├── installer_app/         Windows installer UI + .exe builder tooling
+├── tests/                 Pytest contract coverage
 ├── run_api.py             API server launcher
 ├── run_widget.py          Desktop widget launcher
 ├── pyproject.toml         Package metadata & entry points
@@ -38,13 +36,13 @@ blindtag/
 
 ---
 
-## Mathematical Basis
+## Mathematical basis
 
-The Tags block occupies 128 codepoints in Plane 14, mirroring the ASCII table shifted by a fixed offset of **0xE0000** (917 504 decimal):
+The Tags block occupies 128 codepoints in Plane 14, mirroring the ASCII table shifted by a fixed offset of **0xE0000** (917,504 decimal):
 
-```
-Encode:  ord(ascii_char)    + 0xE0000  →  Plane 14 tag codepoint
-Decode:  plane14_codepoint  - 0xE0000  →  ord(ascii_char)
+```text
+Encode:  ord(ascii_char)    + 0xE0000  ->  Plane 14 tag codepoint
+Decode:  plane14_codepoint  - 0xE0000  ->  ord(ascii_char)
 ```
 
 | ASCII character | Codepoint | Plane 14 tag |
@@ -52,11 +50,11 @@ Decode:  plane14_codepoint  - 0xE0000  →  ord(ascii_char)
 | `A`             | U+0041    | U+E0041      |
 | `z`             | U+007A    | U+E007A      |
 | `!`             | U+0021    | U+E0021      |
-| `~` (max)       | U+007E    | U+E007E      |
+| `~`             | U+007E    | U+E007E      |
 
-**Payload framing:** Every payload is terminated by **U+E007F (TAG CANCEL)** — the only Plane 14 character outside the printable ASCII mirror. The decoder uses it as an unambiguous end-of-stream sentinel.
+Every payload is terminated by **U+E007F (TAG CANCEL)** — the only Plane 14 character outside the printable ASCII mirror. The decoder uses it as an end-of-stream sentinel.
 
-```
+```text
 [ anchor text ][ U+E0020…U+E007E payload chars ][ U+E007F TAG_CANCEL ]
 ```
 
@@ -64,7 +62,7 @@ Decode:  plane14_codepoint  - 0xE0000  →  ord(ascii_char)
 
 ## Installation
 
-### From source (recommended)
+### From source
 
 ```bash
 git clone https://github.com/joediggidyyy/blindtag.git
@@ -76,14 +74,43 @@ pip install -e .
 # Runtime + dev/testing tools
 pip install -e ".[dev]"
 ```
-# ⬡ BlindTag
 
-<p align="center">
-  <img src="assets/images/blindtag_logo.png" alt="BlindTag" width="180">
-</p>
+### Explicit runtime requirements
 
-> Unicode Plane 14 Steganographic Obfuscation Toolkit
+```bash
+pip install -r requirements.txt
+```
+
 **Python requirement:** 3.11 or later.
+
+### Windows installer surfaces
+
+BlindTag now includes a Windows installer application source surface and a one-file installer builder:
+
+```bash
+# Validate the installer contract (Default/Advanced + required options)
+python installer_app/windows_installer.py --validate-contract
+
+# Print the resolved install plan without changing the machine
+python installer_app/windows_installer.py --dry-run-install
+
+# Build the Windows .exe installer from an audited wheel
+python installer_app/build_windows_installer.py
+```
+
+Installer contract highlights:
+
+- **Default (Recommended)** — aimed at recreational/everyday BlindTag use
+- **Advanced** — custom setup path with explicit cautionary language
+- The installer automatically satisfies the Python/runtime prerequisite lane when needed and only asks Windows for elevation when that setup truly requires it
+- Required options:
+  - `Create shortcut`
+  - `Enable quick launch`
+  - `Display README.md after install`
+
+For ordinary Windows users, the target experience is intentionally low-burden: click through the installer, let BlindTag handle dependency/runtime setup, and launch from the installed widget shortcut.
+
+**Build note:** the `.exe` builder requires a locally built BlindTag wheel and `PyInstaller` in the build environment.
 
 ### Linux clipboard support
 
@@ -91,32 +118,28 @@ PySide6 uses Qt's native clipboard API. No `xclip` or `xsel` is required on Linu
 
 ---
 
-## Quick Start
+## Quick start
 
 ### Python API
 
 ```python
-from blindtag import encode, decode, strip_plane14
+from blindtag import decode, encode, strip_plane14
 
 # Embed a hidden payload
 tagged = encode(
     anchor="Meeting notes from Monday sync.",
-    hidden_message="CONFIDENTIAL:REF-INV-7821"
+    hidden_message="CONFIDENTIAL:REF-INV-7821",
 )
-
-# Visually identical to the anchor
-print(tagged)
-# → "Meeting notes from Monday sync."  (invisible tag chars follow)
 
 # Extract the payload
 secret = decode(tagged)
 print(secret)
-# → "CONFIDENTIAL:REF-INV-7821"
+# -> "CONFIDENTIAL:REF-INV-7821"
 
-# Strip all Plane 14 chars — recover clean anchor
+# Recover clean anchor text
 clean = strip_plane14(tagged)
 print(clean)
-# → "Meeting notes from Monday sync."
+# -> "Meeting notes from Monday sync."
 ```
 
 ### Error handling
@@ -126,161 +149,66 @@ from blindtag import encode
 from blindtag.exceptions import InvalidPayloadError
 
 try:
-    encode("cover", "café")          # é is non-ASCII → raises
+    encode("cover", "café")
 except InvalidPayloadError as exc:
     print(exc)
-    # Payload character at index 3 — U+00E9 'é' — is outside
-    # the allowed printable ASCII range [U+0020..U+007E].
 ```
 
 ---
 
-## Module A — Core Engine (`blindtag/core.py`)
-
-| Symbol                           | Type          | Description                         |
-| -------------------------------- | ------------- | ----------------------------------- |
-| `PLANE14_OFFSET`                 | `int`         | `0xE0000` — bitwise shift constant  |
-| `TAG_CANCEL`                     | `str`         | `"\U000E007F"` — payload terminator |
-| `ASCII_MIN`                      | `int`         | `0x20` — lower payload boundary     |
-| `ASCII_MAX`                      | `int`         | `0x7E` — upper payload boundary     |
-| `encode(anchor, hidden_message)` | `str`         | Embed payload into cover text       |
-| `decode(raw_text)`               | `str \| None` | Extract payload; `None` if absent   |
-| `strip_plane14(text)`            | `str`         | Remove all tag characters           |
-
-### Payload character set
-
-Only **printable ASCII** is accepted as payload input (95 characters):
-
-```
-U+0020 SPACE  through  U+007E TILDE
-```
-
-Control characters (`\n`, `\t`, `\x00`, …), DEL (`\x7F`), and any non-ASCII Unicode will raise `InvalidPayloadError`.
-
-### Normalization safety
-
-The Unicode standard explicitly excludes the Tags block from NFC, NFD, NFKC, and NFKD composition / decomposition (Unicode 15.0 §23.9). A tagged string that passes through `unicodedata.normalize()` retains its payload:
-
-```python
-import unicodedata
-from blindtag import encode, decode
-
-tagged = encode("résumé", "normalization_safe")
-assert decode(unicodedata.normalize("NFC",  tagged)) == "normalization_safe"
-assert decode(unicodedata.normalize("NFD",  tagged)) == "normalization_safe"
-assert decode(unicodedata.normalize("NFKC", tagged)) == "normalization_safe"
-assert decode(unicodedata.normalize("NFKD", tagged)) == "normalization_safe"
-```
-
----
-
-## Module B — API Server (`blindtag/api.py`)
+## API server
 
 ```bash
-python run_api.py                   # http://127.0.0.1:8000
-python run_api.py --port 9000       # custom port
-python run_api.py --reload          # hot-reload (dev mode)
+python run_api.py
+python run_api.py --port 9000
+python run_api.py --reload
 python run_api.py --log-level debug
 ```
 
-Interactive docs: **http://127.0.0.1:8000/docs**
+Interactive docs: `http://127.0.0.1:8000/docs`
 
-### `POST /v1/encode`
+### Core endpoints
 
-**Request**
-
-```json
-{
-  "anchor": "Meeting notes from Monday sync.",
-  "hidden_message": "CONFIDENTIAL:REF-7821"
-}
-```
-
-**Response**
-
-```json
-{
-  "result": "Meeting notes from Monday sync.<invisible>",
-  "anchor_length": 31,
-  "payload_length": 21,
-  "total_length": 53
-}
-```
-
-### `POST /v1/decode`
-
-**Request**
-
-```json
-{
-  "raw_text": "Meeting notes from Monday sync.<invisible>"
-}
-```
-
-**Response (payload found)**
-
-```json
-{
-  "found": true,
-  "message": "CONFIDENTIAL:REF-7821",
-  "detail": "Payload successfully extracted (21 characters)."
-}
-```
-
-**Response (no payload)**
-
-```json
-{
-  "found": false,
-  "message": null,
-  "detail": "No Plane 14 tag payload detected in the provided text."
-}
-```
-
-### `GET /health`
-
-```json
-{ "status": "ok", "service": "BlindTag API", "version": "1.0.0" }
-```
+- `POST /v1/encode`
+- `POST /v1/decode`
+- `GET /health`
+- `GET /v1/log`
+- `POST /v1/log/export`
 
 ### `GET /v1/log`
 
 Read-only query surface for the retained BlindTag operation ledger.
 
-| Parameter      | Meaning                                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `request_id`   | Filter by the API request id emitted in `X-Request-Id`                                                                    |
-| `operation`    | Filter by operation name (`encode`, `decode`, `log_query`, `log_export`)                                                  |
-| `level`        | Filter by severity (`debug`, `info`, `warning`, `error`, `critical`)                                                      |
-| `policy_mode`  | Filter by retained policy posture (`operational`, `security`, `forensic`)                                                 |
+| Parameter | Meaning |
+| --------- | ------- |
+| `request_id` | Filter by the API request id emitted in `X-Request-Id` |
+| `operation` | Filter by operation name (`encode`, `decode`, `log_query`, `log_export`) |
+| `level` | Filter by severity (`debug`, `info`, `warning`, `error`, `critical`) |
+| `policy_mode` | Filter by retained policy posture (`operational`, `security`, `forensic`) |
 | `action_phase` | Filter by provenance handoff phase (`received`, `verified`, `exported`, `blocked`, `quarantined`, `unpacked`, `released`) |
-| `limit`        | Maximum records returned                                                                                                  |
+| `limit` | Maximum records returned |
 
 ### `POST /v1/log/export`
 
-Controlled export surface for retained evidence packets. The export root is always server-owned and path-contained under `.blindtag/generated/reporting/exports/`.
+Controlled export surface for retained evidence packets. The export root is path-contained under `.blindtag/generated/reporting/exports/`.
 
-The request accepts `policy_mode` so callers can export `operational`, `security`, or `forensic` retained evidence.
-
-- `operational` mode preserves the Pass J baseline and may use the shared-key gate (`BLINDTAG_EXPORT_SIGNING_KEY`).
-- `security` / `forensic` mode use verifier-friendly Ed25519 request verification and detached artifact signing (`BLINDTAG_FORENSIC_SIGNING_*`).
-- Elevated export bundles include provenance summaries, chain verification, segment-seal summaries, and a sandbox-simulated handoff assessment packet that validates output content and final handoff-completion posture.
-
-When signing is absent for the requested mode, BlindTag fails closed for elevated exports and reports the missing trust material in names-only form.
+- `operational` mode preserves the Pass J baseline and may use the shared-key gate (`BLINDTAG_EXPORT_SIGNING_KEY`)
+- `security` / `forensic` mode use verifier-friendly Ed25519 request verification and detached artifact signing (`BLINDTAG_FORENSIC_SIGNING_*`)
+- elevated export bundles include provenance summaries, chain verification, segment-seal summaries, and a sandbox-simulated handoff assessment packet that validates output content and final handoff-completion posture
 
 ### Payload size policy
 
-| Field            | Maximum      |
-| ---------------- | ------------ |
-| `anchor`         | 10 000 chars |
-| `hidden_message` | 1 000 chars  |
-| `raw_text`       | 50 000 chars |
+| Field | Maximum |
+| ----- | ------- |
+| `anchor` | 10,000 chars |
+| `hidden_message` | 1,000 chars |
+| `raw_text` | 50,000 chars |
 
 Requests exceeding these limits receive **HTTP 422** before any codec logic runs.
 
 ---
 
-## Module C — Desktop Widget (`blindtag/widget.py`)
+## Desktop widget
 
 ```bash
 blindtag-widget
@@ -288,38 +216,36 @@ blindtag-widget
 
 ### Launch surfaces
 
-| Surface                                   | Intended use                         | Terminal behavior                                                                                              |
-| ----------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `blindtag-widget` / `blindtag-widget.exe` | Required widget launch surface       | **No terminal** — this is the required widget behavior                                                         |
-| `blindtag widget`                         | Supported CLI compatibility launcher | Hands off to the dedicated widget surface and should return the calling CLI promptly in installed environments |
-| `python run_widget.py`                    | Direct source-tree developer launch  | **Currently keeps a terminal attached** — useful only for development/debug, not acceptable as final widget UX |
+| Surface | Intended use | Terminal behavior |
+| ------- | ------------ | ----------------- |
+| `blindtag-widget` / `blindtag-widget.exe` | Required widget launch surface | **No terminal** — this is the required widget behavior |
+| `blindtag widget` | Supported CLI compatibility launcher | Hands off to the dedicated widget surface and should return the calling CLI promptly in installed environments |
+| `python run_widget.py` | Direct source-tree developer launch | Keeps a terminal attached; useful for development/debug only |
 
 ### Hotkeys
 
-| Shortcut      | Action                              |
-| ------------- | ----------------------------------- |
-| `Ctrl+E`      | Switch to Encode panel              |
-| `Ctrl+D`      | Switch to Decode panel              |
-| `Ctrl+W`      | Toggle Clipboard Watcher            |
+| Shortcut | Action |
+| -------- | ------ |
+| `Ctrl+E` | Switch to Encode panel |
+| `Ctrl+D` | Switch to Decode panel |
+| `Ctrl+W` | Toggle Clipboard Watcher |
 | `Ctrl+Return` | Execute active panel primary action |
-| `Escape`      | Close widget                        |
+| `Escape` | Close widget |
 
-### Clipboard Watcher
+### Clipboard watcher
 
 When enabled, BlindTag listens to Qt clipboard change events on the GUI thread. If new clipboard content contains a Plane 14 payload, the widget:
 
-1. Switches to the Decode panel automatically
-2. Populates raw input and extracted payload fields
-3. Shows an inline detection banner when the window is already foregrounded
-4. When hidden in background posture, shows a persistent corner relaunch notification on hide and replaces that anchor with the latest hidden payload notification until dismissed or replaced
+1. switches to the Decode panel automatically
+2. populates raw input and extracted payload fields
+3. shows an inline detection banner when the window is already foregrounded
+4. when hidden in background posture, shows a persistent corner relaunch notification on hide and replaces that anchor with the latest hidden payload notification until dismissed or replaced
 
 No data leaves the local machine. Clipboard detection stays inside the Qt event loop and shuts down with the widget.
 
-**Current note (2026-05-31):** the hidden workflow lane is now closed. Operator live testing has passed, the hide-time relaunch anchor now appears when BlindTag is hidden with Clip Watch active, and the automated notification coverage is backed by Calamum runs `20260531T220215Z-blindtag-widget` and `20260531T220238Z-blindtag-all`. Terminal-free widget launch remains a non-negotiable requirement. `blindtag-widget.exe` remains the normal installed widget surface, and `blindtag widget` remains the supported compatibility launcher that should hand off to the same widget surface rather than staying attached to the CLI.
-
 ---
 
-## Running Tests
+## Running tests
 
 > Tests are orchestrated via **[Calamum](https://github.com/joediggidyyy/calamum)** — the Polymath test runner.
 >
@@ -339,34 +265,26 @@ pytest tests/test_api.py -v
 pytest --cov=blindtag --cov-report=term-missing
 ```
 
-### Test coverage map
+### Validation highlights
 
-| Class                         | Requirement                                                                 |
-| ----------------------------- | --------------------------------------------------------------------------- |
-| `TestRoundTrip`               | Encode→decode fidelity across payload types                                 |
-| `TestAnchorModification`      | Payload integrity through whitespace/newline mutations                      |
-| `TestAnchorEdgeCases`         | Multi-byte emoji, CJK, RTL, alphanumeric anchors                            |
-| `TestValidationBoundaries`    | `InvalidPayloadError` for every out-of-range char                           |
-| `TestDecodeNoPayload`         | `None` return on clean strings                                              |
-| `TestCrashImmunity`           | No exceptions on arbitrary / corrupted Plane 14 input                       |
-| `TestNormalizationResistance` | NFC / NFD / NFKC / NFKD payload preservation                                |
-| `TestTagCancelSemantics`      | Hard stop at U+E007F; second payload ignored                                |
-| `TestStripPlane14`            | Sanitization utility correctness                                            |
-| `TestLongPayloads`            | 128-char and 512-char payload integrity                                     |
-| `TestEncodeEndpoint`          | API schema, validation, error codes                                         |
-| `TestDecodeEndpoint`          | API round-trip, miss feedback, size limits                                  |
-| `TestReportingEndpoints`      | Retained API query/export coverage and trust gating                         |
-| `TestRetainedExport`          | JSONL export family, checksums, and optional signing                        |
-| `TestHighTrustProvenance`     | Elevated provenance modes, chain/seal verification, sandbox handoff posture |
+| Class | Requirement |
+| ----- | ----------- |
+| `TestRoundTrip` | Encode/decode fidelity across payload types |
+| `TestValidationBoundaries` | `InvalidPayloadError` for every out-of-range char |
+| `TestDecodeNoPayload` | `None` return on clean strings |
+| `TestReportingEndpoints` | Retained API query/export coverage and trust gating |
+| `TestRetainedExport` | JSONL export family, checksums, and optional signing |
+| `TestHighTrustProvenance` | Elevated provenance modes, chain/seal verification, sandbox handoff posture |
+| `TestWindowsInstallerContract` | Installer mode/option contract validation |
 
 ---
 
-## Security Notes
+## Security notes
 
 - **Localhost only.** The API server binds to `127.0.0.1` by default. Never expose it on `0.0.0.0` in untrusted network environments.
 - **Input sanitization.** The Pydantic validation layer rejects oversized and malformed payloads at the HTTP boundary before any codec code executes.
 - **Local-only retained reporting.** BlindTag may persist structured API operation records and export packets under `.blindtag/generated/reporting/`. This data never leaves the local machine unless the operator intentionally copies or publishes it.
-- **Elevated provenance modes.** BlindTag now supports `security` and `forensic` retained-evidence modes with provenance fields, deny-by-default executable handoff scope rules, tamper-evident record chaining, segment seals, and sandbox-simulated handoff assessment.
+- **Elevated provenance modes.** BlindTag supports `security` and `forensic` retained-evidence modes with provenance fields, deny-by-default executable handoff scope rules, tamper-evident record chaining, segment seals, and sandbox-simulated handoff assessment.
 - **Platform clipboard.** The clipboard watcher reads only from the local system clipboard (via Qt's native clipboard API). It does not transmit data over any network.
 
 ### Reporting validation evidence

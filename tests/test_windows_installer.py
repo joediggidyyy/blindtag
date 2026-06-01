@@ -3,12 +3,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from installer_app.windows_installer import (
     DEFAULT_INSTALL_DIR,
     INSTALLER_MODES,
     INSTALLER_OPTION_SPECS,
     INSTALL_MODE_ADVANCED,
     INSTALL_MODE_DEFAULT,
+    ensure_python_runtime,
     build_contract_summary,
     build_install_plan,
     find_latest_wheel,
@@ -38,6 +41,8 @@ class TestWindowsInstallerContract:
         assert plan.recommended is True
         assert plan.install_dir == str(DEFAULT_INSTALL_DIR)
         assert plan.widget_launcher.endswith("blindtag-widget.exe")
+        assert plan.auto_install_python is True
+        assert plan.automatic_elevation is True
 
     def test_validate_install_plan_flags_missing_wheel(self, tmp_path: Path) -> None:
         readme = tmp_path / "README.md"
@@ -61,3 +66,30 @@ class TestWindowsInstallerContract:
         assert INSTALL_MODE_DEFAULT in summary["modes"]
         assert INSTALL_MODE_ADVANCED in summary["modes"]
         assert len(summary["options"]) == 3
+        assert summary["bootstrap"]["auto_python_install"] is True
+        assert summary["bootstrap"]["automatic_elevation"] is True
+
+    def test_ensure_python_runtime_bootstraps_when_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        discoveries = iter([None, ["C:/Python312/python.exe"]])
+        monkeypatch.setattr("installer_app.windows_installer._try_discover_python_command", lambda: next(discoveries))
+        monkeypatch.setattr("installer_app.windows_installer._is_windows", lambda: True)
+        monkeypatch.setattr(
+            "installer_app.windows_installer._install_python_with_winget",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "installer_app.windows_installer._install_python_from_bootstrap_installer",
+            lambda: False,
+        )
+
+        command, status = ensure_python_runtime()
+
+        assert command == ["C:/Python312/python.exe"]
+        assert status["method"] == "winget"
+
+    def test_ensure_python_runtime_raises_without_windows_bootstrap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("installer_app.windows_installer._try_discover_python_command", lambda: None)
+        monkeypatch.setattr("installer_app.windows_installer._is_windows", lambda: False)
+
+        with pytest.raises(RuntimeError, match="only supported on Windows"):
+            ensure_python_runtime()

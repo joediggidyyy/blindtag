@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import shutil
 import subprocess
 import sys
-import venv
+import tempfile
+import urllib.request
 import webbrowser
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -41,8 +43,34 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DIST_ROOT = REPO_ROOT / "dist"
 REPORT_TMP_DIST_ROOT = REPO_ROOT / "report_tmp" / "pass_s_dist"
 WINDOWS_INSTALLER_DIST = DIST_ROOT / "windows-installer"
-README_SOURCE = REPO_ROOT / "README.md"
 DEFAULT_INSTALL_DIR = Path(os.getenv("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")) / "BlindTag"
+PYTHON_MIN_VERSION = "3.11"
+PYTHON_BOOTSTRAP_VERSION = "3.12.10"
+PYTHON_BOOTSTRAP_WINGET_ID = "Python.Python.3.12"
+PYTHON_BOOTSTRAP_URL = f"https://www.python.org/ftp/python/{PYTHON_BOOTSTRAP_VERSION}/python-{PYTHON_BOOTSTRAP_VERSION}-amd64.exe"
+
+
+def _payload_root() -> Path | None:
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        return Path(bundle_root) / "payload"
+    return None
+
+
+def _resolve_payload_file(name: str, fallback: Path) -> Path:
+    payload_root = _payload_root()
+    if payload_root is not None:
+        candidate = payload_root / name
+        if candidate.exists():
+            return candidate
+    return fallback
+
+
+README_SOURCE = _resolve_payload_file("README.md", REPO_ROOT / "README.md")
+SHORTCUT_ICON_SOURCE = _resolve_payload_file(
+    "blindtag_thumbnail_basic.png",
+    REPO_ROOT / "assets" / "images" / "blindtag_thumbnail_basic.png",
+)
 
 
 @dataclass(frozen=True)
@@ -60,12 +88,18 @@ class InstallerPlan:
     widget_launcher: str
     cli_launcher: str
     install_manifest_path: str
+    auto_install_python: bool
+    automatic_elevation: bool
+    python_bootstrap_strategy: str
 
 
 def find_latest_wheel(search_roots: list[Path] | None = None) -> Path | None:
-    roots = search_roots or [DIST_ROOT, REPORT_TMP_DIST_ROOT]
+    payload_root = _payload_root()
+    roots = search_roots or ([payload_root] if payload_root is not None else []) + [DIST_ROOT, REPORT_TMP_DIST_ROOT]
     wheels: list[Path] = []
     for root in roots:
+        if root is None:
+            continue
         if not root.exists():
             continue
         wheels.extend(sorted(root.rglob("blindtag-*.whl")))
@@ -118,6 +152,9 @@ def build_install_plan(
         widget_launcher=str(widget_launcher),
         cli_launcher=str(cli_launcher),
         install_manifest_path=str(manifest_path),
+        auto_install_python=True,
+        automatic_elevation=True,
+        python_bootstrap_strategy="automatic-python-bootstrap",
     )
 
 
@@ -142,6 +179,13 @@ def build_contract_summary() -> dict[str, Any]:
         "options": INSTALLER_OPTION_SPECS,
         "default_install_dir": str(DEFAULT_INSTALL_DIR),
         "wheel_found": str(find_latest_wheel()) if find_latest_wheel() else None,
+        "bootstrap": {
+            "auto_python_install": True,
+            "python_min_version": PYTHON_MIN_VERSION,
+            "preferred_python_version": PYTHON_BOOTSTRAP_VERSION,
+            "automatic_elevation": True,
+            "behavior": "Installer resolves Python/runtime dependencies automatically and requests Windows elevation only when required.",
+        },
     }
 
 
@@ -151,16 +195,94 @@ def _run_command(command: list[str]) -> None:
         raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "command failed")
 
 
+def _run_command_result(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, check=False, capture_output=True, text=True)
+
+
+def _supports_python_version(version_text: str) -> bool:
+    normalized = version_text.strip()
+    return any(f"Python {major_minor}" in normalized for major_minor in ("3.11", "3.12", "3.13"))
+
+
+def _command_available(command: list[str]) -> bool:
+    try:
+        completed = _run_command_result(command)
+    except OSError:
+        return False
+    return completed.returncode == 0
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+def _common_python_install_locations() -> list[Path]:
+    versions = ("313", "312", "311")
+    env_roots = [
+        os.getenv("ProgramFiles"),
+        os.getenv("LocalAppData"),
+    ]
+    base_roots = [Path(root) for root in env_roots if root]
+    candidates: list[Path] = []
+    for root in base_roots:
+        candidates.extend(
+            [
+                root / "Python" / f"Python{version}" / "python.exe"
+                for version in versions
+            ]
+        )
+        candidates.extend(
+            [
+                root / "Programs" / "Python" / f"Python{version}" / "python.exe"
+                for version in versions
+            ]
+        )
+    return candidates
+
+
+def _is_running_as_admin() -> bool:
+    if not _is_windows():
+        return False
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _run_elevated_process(command: list[str]) -> None:
+    if not _is_windows():
+        raise RuntimeError("Elevation helper is only available on Windows.")
+    file_path = command[0].replace("'", "''")
+    args = ", ".join(f"'{argument.replace("'", "''")}'" for argument in command[1:])
+    command_text = (
+        f"$process = Start-Process -FilePath '{file_path}' -ArgumentList @({args}) -Verb RunAs -Wait -PassThru; "
+        "if ($null -eq $process) { exit 1 }; exit $process.ExitCode"
+    )
+    completed = _run_command_result(["powershell", "-NoProfile", "-Command", command_text])
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "Elevated process failed")
+
+
+def _try_discover_python_command() -> list[str] | None:
+    try:
+        return _discover_python_command()
+    except RuntimeError:
+        return None
+
+
 def _discover_python_command() -> list[str]:
     candidates = []
     if not getattr(sys, "frozen", False):
         candidates.append([sys.executable])
     candidates.extend([
         ["py", "-3.11"],
+        ["py", "-3.12"],
+        ["py", "-3.13"],
         ["py", "-3"],
         ["python"],
         ["python3"],
     ])
+    candidates.extend([[str(path)] for path in _common_python_install_locations() if path.exists()])
     for candidate in candidates:
         try:
             completed = subprocess.run(
@@ -174,9 +296,84 @@ def _discover_python_command() -> list[str]:
         if completed.returncode != 0:
             continue
         version_text = (completed.stdout or completed.stderr).strip()
-        if "Python 3.11" in version_text or "Python 3.12" in version_text or "Python 3.13" in version_text:
+        if _supports_python_version(version_text):
             return candidate
     raise RuntimeError("Python 3.11+ was not found. Install Python 3.11 or later, then rerun the installer.")
+
+
+def _download_python_bootstrap_installer() -> Path:
+    target = Path(tempfile.gettempdir()) / f"python-{PYTHON_BOOTSTRAP_VERSION}-amd64.exe"
+    urllib.request.urlretrieve(PYTHON_BOOTSTRAP_URL, target)
+    return target
+
+
+def _install_python_with_winget() -> bool:
+    if not _command_available(["winget", "--version"]):
+        return False
+    user_command = [
+        "winget",
+        "install",
+        "--exact",
+        "--id",
+        PYTHON_BOOTSTRAP_WINGET_ID,
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+        "--disable-interactivity",
+        "--scope",
+        "user",
+    ]
+    first_attempt = _run_command_result(user_command)
+    if first_attempt.returncode == 0:
+        return True
+    machine_command = [*user_command[:-2], "machine"]
+    _run_elevated_process(machine_command)
+    return True
+
+
+def _install_python_from_bootstrap_installer() -> bool:
+    installer_path = _download_python_bootstrap_installer()
+    user_command = [
+        str(installer_path),
+        "/quiet",
+        "InstallAllUsers=0",
+        "PrependPath=1",
+        "Include_pip=1",
+        "Include_launcher=1",
+        "Shortcuts=0",
+        "SimpleInstall=1",
+    ]
+    first_attempt = _run_command_result(user_command)
+    if first_attempt.returncode == 0:
+        return True
+    machine_command = [
+        str(installer_path),
+        "/quiet",
+        "InstallAllUsers=1",
+        "PrependPath=1",
+        "Include_pip=1",
+        "Include_launcher=1",
+        "Shortcuts=0",
+        "SimpleInstall=1",
+    ]
+    _run_elevated_process(machine_command)
+    return True
+
+
+def ensure_python_runtime() -> tuple[list[str], dict[str, Any]]:
+    discovered = _try_discover_python_command()
+    if discovered is not None:
+        return discovered, {"method": "existing-python", "elevated": False}
+    if not _is_windows():
+        raise RuntimeError("Python 3.11+ was not found and automatic bootstrap is only supported on Windows.")
+    if _install_python_with_winget():
+        discovered = _try_discover_python_command()
+        if discovered is not None:
+            return discovered, {"method": "winget", "elevated": False if _is_running_as_admin() else True}
+    if _install_python_from_bootstrap_installer():
+        discovered = _try_discover_python_command()
+        if discovered is not None:
+            return discovered, {"method": "python-bootstrap-installer", "elevated": False if _is_running_as_admin() else True}
+    raise RuntimeError("BlindTag could not bootstrap Python 3.11+ automatically.")
 
 
 def _desktop_shortcut_path() -> Path:
@@ -216,7 +413,7 @@ def perform_install(plan: InstallerPlan, *, dry_run: bool = False) -> dict[str, 
     runtime_dir = install_root / "runtime"
     readme_target = install_root / "README.md"
     widget_launcher = Path(plan.widget_launcher)
-    icon_path = REPO_ROOT / "assets" / "images" / "blindtag_thumbnail_basic.png"
+    icon_path = SHORTCUT_ICON_SOURCE
 
     actions = {
         "install_dir": str(install_root),
@@ -227,17 +424,18 @@ def perform_install(plan: InstallerPlan, *, dry_run: bool = False) -> dict[str, 
         "create_shortcut": plan.create_shortcut,
         "enable_quick_launch": plan.enable_quick_launch,
         "display_readme": plan.display_readme,
+        "auto_install_python": plan.auto_install_python,
+        "automatic_elevation": plan.automatic_elevation,
+        "python_bootstrap_strategy": plan.python_bootstrap_strategy,
     }
     if dry_run:
         return {"status": "dry-run", "actions": actions}
 
-    python_cmd = _discover_python_command()
+    python_cmd, bootstrap_result = ensure_python_runtime()
     install_root.mkdir(parents=True, exist_ok=True)
     shutil.copy2(plan.readme_path, readme_target)
 
-    builder = venv.EnvBuilder(with_pip=True, clear=False, upgrade=False)
-    builder.create(str(runtime_dir))
-
+    _run_command([*python_cmd, "-m", "venv", str(runtime_dir)])
     venv_python = runtime_dir / "Scripts" / "python.exe"
     _run_command([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
     _run_command([str(venv_python), "-m", "pip", "install", "--upgrade", "--force-reinstall", plan.wheel_path])
@@ -260,6 +458,7 @@ def perform_install(plan: InstallerPlan, *, dry_run: bool = False) -> dict[str, 
         },
         "wheel_path": plan.wheel_path,
         "readme_path": str(readme_target),
+        "python_bootstrap": bootstrap_result,
     }
     Path(plan.install_manifest_path).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
@@ -296,31 +495,38 @@ def _run_gui() -> None:
         browse_button.configure(state=state)
 
     tk.Label(root, text="Choose installation type", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w")
+    tk.Label(
+        root,
+        text="BlindTag will automatically install Python and required runtime pieces if they are missing. Most users should choose Default and click Install.",
+        wraplength=460,
+        justify="left",
+        anchor="w",
+    ).grid(row=1, column=0, sticky="w", pady=(4, 10))
     tk.Radiobutton(
         root,
         text=INSTALLER_MODES[INSTALL_MODE_DEFAULT]["label"],
         variable=mode_var,
         value=INSTALL_MODE_DEFAULT,
         command=_refresh_mode,
-    ).grid(row=1, column=0, sticky="w")
-    tk.Label(root, text=INSTALLER_MODES[INSTALL_MODE_DEFAULT]["description"], anchor="w").grid(row=2, column=0, sticky="w")
+    ).grid(row=2, column=0, sticky="w")
+    tk.Label(root, text=INSTALLER_MODES[INSTALL_MODE_DEFAULT]["description"], anchor="w").grid(row=3, column=0, sticky="w")
     tk.Radiobutton(
         root,
         text=INSTALLER_MODES[INSTALL_MODE_ADVANCED]["label"],
         variable=mode_var,
         value=INSTALL_MODE_ADVANCED,
         command=_refresh_mode,
-    ).grid(row=3, column=0, sticky="w", pady=(8, 0))
-    tk.Label(root, text=INSTALLER_MODES[INSTALL_MODE_ADVANCED]["description"], anchor="w").grid(row=4, column=0, sticky="w")
-    tk.Label(root, textvariable=warning_var, fg="#a85d00", anchor="w").grid(row=5, column=0, sticky="w", pady=(4, 8))
+    ).grid(row=4, column=0, sticky="w", pady=(8, 0))
+    tk.Label(root, text=INSTALLER_MODES[INSTALL_MODE_ADVANCED]["description"], anchor="w").grid(row=5, column=0, sticky="w")
+    tk.Label(root, textvariable=warning_var, fg="#a85d00", anchor="w").grid(row=6, column=0, sticky="w", pady=(4, 8))
 
     options_frame = tk.LabelFrame(root, text="Options", padx=10, pady=8)
-    options_frame.grid(row=6, column=0, sticky="we")
+    options_frame.grid(row=7, column=0, sticky="we")
     for idx, spec in enumerate(INSTALLER_OPTION_SPECS):
         tk.Checkbutton(options_frame, text=spec["label"], variable=option_vars[spec["key"]]).grid(row=idx, column=0, sticky="w")
 
     install_frame = tk.LabelFrame(root, text="Install location", padx=10, pady=8)
-    install_frame.grid(row=7, column=0, sticky="we", pady=(8, 0))
+    install_frame.grid(row=8, column=0, sticky="we", pady=(8, 0))
     install_dir_entry = tk.Entry(install_frame, textvariable=install_dir_var, width=52)
     install_dir_entry.grid(row=0, column=0, padx=(0, 6))
 
@@ -352,7 +558,7 @@ def _run_gui() -> None:
         root.destroy()
 
     button_row = tk.Frame(root)
-    button_row.grid(row=8, column=0, sticky="e", pady=(12, 0))
+    button_row.grid(row=9, column=0, sticky="e", pady=(12, 0))
     tk.Button(button_row, text="Install", command=_install, width=12).grid(row=0, column=0, padx=(0, 6))
     tk.Button(button_row, text="Cancel", command=root.destroy, width=12).grid(row=0, column=1)
 
@@ -370,6 +576,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-create-shortcut", action="store_true")
     parser.add_argument("--no-enable-quick-launch", action="store_true")
     parser.add_argument("--no-display-readme", action="store_true")
+    parser.add_argument("--install", action="store_true", help="Run the installer non-interactively using the resolved options.")
     args = parser.parse_args(argv)
 
     if args.validate_contract:
@@ -388,6 +595,17 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(perform_install(plan, dry_run=True), indent=2))
         else:
             print(json.dumps(asdict(plan), indent=2))
+        return 0
+
+    if args.install:
+        plan = build_install_plan(
+            mode=args.mode,
+            install_dir=args.install_dir,
+            create_shortcut=not args.no_create_shortcut,
+            enable_quick_launch=not args.no_enable_quick_launch,
+            display_readme=not args.no_display_readme,
+        )
+        print(json.dumps(perform_install(plan), indent=2))
         return 0
 
     _run_gui()

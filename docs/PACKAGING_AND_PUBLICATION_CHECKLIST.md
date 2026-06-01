@@ -76,6 +76,7 @@ This checklist is grounded in:
 - [ ] Provide **Default (Recommended)** as the primary install choice.
 - [ ] Aim Default at recreational/everyday BlindTag use.
 - [ ] Keep the Default path calm and low-friction.
+- [ ] Keep mainstream user burden near `click OK`; prerequisite/runtime setup must remain installer-owned.
 - [ ] Provide **Advanced** as a secondary/custom path.
 - [ ] Use warning language on Advanced indicating it is for users who specifically need custom setup behavior.
 
@@ -90,6 +91,8 @@ This checklist is grounded in:
 - [ ] Default mode installs the standard BlindTag package surface.
 - [ ] Default mode installs the terminal-free widget launch surface.
 - [ ] Default mode includes the runtime asset set required by widget behavior and packaged docs.
+- [ ] Default mode installs Python automatically when missing and satisfies package/runtime dependencies without manual terminal work.
+- [ ] The installer auto-elevates only when Windows prerequisite setup genuinely requires elevated execution.
 - [ ] Advanced mode exposes custom install choices without making Default ambiguous.
 - [ ] Installer copy makes the ordinary post-install launch path obvious.
 
@@ -110,6 +113,8 @@ This checklist is grounded in:
 - [ ] Validate shortcut behavior.
 - [ ] Validate quick-launch behavior.
 - [ ] Validate `Display README.md after install` behavior.
+- [ ] Validate the missing-Python bootstrap lane or a faithful simulation of that lane.
+- [ ] Validate that elevation prompts appear only when prerequisite setup genuinely needs them.
 - [ ] Validate output content and handoff-completion posture, not just process exit codes.
 - [ ] Record retained evidence for the sandbox results.
 
@@ -174,5 +179,6 @@ Do not mark this release lane complete until every statement below is true.
 - [ ] The Windows installer is built and validated in a sandbox.
 - [ ] Default and Advanced installer modes behave as documented.
 - [ ] The installer exposes `Create shortcut`, `Enable quick launch`, and `Display README.md after install`.
+- [ ] The installer owns prerequisite/runtime setup for ordinary Windows users, including Python bootstrap when needed.
 - [ ] TestPyPI validation passed before production upload.
 - [ ] Final release judgment is backed by retained evidence, not informal confidence.
