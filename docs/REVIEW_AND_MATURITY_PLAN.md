@@ -2944,15 +2944,17 @@ The packaging/publication lane is complete only when all of the following are tr
 | Pass M plan              | LOCKED — bounded implementation plan aligned to Polymath + Calamum contracts                                                                                |
 | Pass N plan              | LOCKED — corrective widget closure pass for terminal-free launch, hidden notification, and top-toggle parity                                                |
 | Pass O plan              | LOCKED — clipboard reliability and pressed-state truthfulness closure aligned to Calamum test/security and Polymath guides                                  |
-| PyPI publish readiness   | PASS O BLOCKER CLEARED — widget publish blocker closed on 2026-05-31; any publish timing is now a separate operator/release decision                        |
+| PyPI publish readiness   | COMPLETE — BlindTag `1.0.0` published to TestPyPI and production PyPI with fresh-install validation (`https://test.pypi.org/project/blindtag/1.0.0/`, `https://pypi.org/project/blindtag/1.0.0/`) |
 | Pass J plan              | COMPLETE — logging/reporting shipped and validated (`20260531T230143Z-blindtag-reporting`, `20260531T230637Z-blindtag-all`)                                 |
 | Pass R proposal          | COMPLETE — elevated provenance hardening and sandbox-verified forensic lane shipped (`20260531T233221Z-blindtag-forensic`, `20260531T233314Z-blindtag-all`) |
-| Pass S proposal          | EXECUTED — audit complete; package readiness NO-GO pending packaging-surface remediation                                                                    |
-| Pass T plan              | LOCKED — packaging/publication checklist + Windows installer contract documented; execute after Pass S blocker remediation                                  |
+| Pass S proposal          | COMPLETE — package-surface remediation closed and re-verified from built artifacts (`report_tmp/pass_s_package_audit.json`)                                 |
+| Pass T plan              | COMPLETE — packaging/publication checklist, installer sandbox validation, TestPyPI staging, and production PyPI publication closed with retained evidence   |
 
 **Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass N (widget closure corrections) → Pass O (clipboard reliability + pressed-state truthfulness + live publish blocker closure) → Pass J (logging).
 
-**Packaging/publication follow-on:** Pass S blocker remediation → Pass T packaging checklist execution → Windows installer sandbox validation → TestPyPI validation → production publication.
+**Packaging/publication follow-on:** COMPLETE — Pass S remediation, Pass T checklist execution, Windows installer sandbox validation, TestPyPI validation, and production publication all closed for BlindTag `1.0.0`.
+
+**Packaging/publication evidence:** `report_tmp/pass_s_package_audit.json`; `report_tmp/windows_installer_sandbox_validation/windows_installer_sandbox_validation.{json,md}`; TestPyPI `https://test.pypi.org/project/blindtag/1.0.0/`; PyPI `https://pypi.org/project/blindtag/1.0.0/`; wheel `SHA256 2f7531a02146f7811dc6a56c6c09a0b7a9b435f40619a711b26a62cc07a5f25e`; sdist `SHA256 a56179cefa9b41214531eae7c24a32782b1935f46199e5dadf6a9bf6238b6826`; installer `SHA256 59a671828e1e63f04dcb5cd7c198f97947763e7f4b676a460cf58bda0bfa8946`.
 
 **Follow-on security precondition:** Before BlindTag is reused as a transport/unpack substrate for executable payloads, land Pass R (or an equivalent hardening lane) so the reporting/security surface moves from operational integrity to chain-of-custody-grade security / forensic posture.
 
