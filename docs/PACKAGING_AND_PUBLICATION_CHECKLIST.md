@@ -117,12 +117,14 @@ This checklist is grounded in:
 - [ ] Validate that elevation prompts appear only when prerequisite setup genuinely needs them.
 - [ ] Validate output content and handoff-completion posture, not just process exit codes.
 - [ ] Record retained evidence for the sandbox results.
+- [ ] Emit names-only sandbox evidence artifacts (JSON + Markdown) under `report_tmp/windows_installer_sandbox_validation/` so the scenario simulation and handoff packet are preserved.
 
 ### Exit criteria
 
 - [ ] Installed behavior matches installer claims.
 - [ ] Installed widget path is truthful and usable.
 - [ ] Sandbox evidence shows real content/handoff validation.
+- [ ] The sandbox evidence packet includes scenario outcomes, output traces, and a handoff summary.
 
 ---
 

@@ -2898,6 +2898,7 @@ This is the required release order for BlindTag once code remediation begins:
     - test the installer in a sandboxed/simulated environment;
     - validate output content, installed surface truthfulness, and handoff completion posture;
     - validate the missing-Python lane and any required elevation handoff;
+    - emit a retained JSON + Markdown sandbox evidence packet for scenario simulation and handoff reporting;
     - verify the widget launch path, shortcuts, quick-launch behavior, and README display option behave as claimed.
 
 5. **Run the publication staging lane**
