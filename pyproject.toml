@@ -8,7 +8,8 @@ version = "1.0.0"
 description = "Unicode Plane 14 steganographic obfuscation toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Polymath", email = "dev@polymath-global.com" },
 ]
@@ -25,7 +26,6 @@ dependencies = [
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -55,9 +55,23 @@ blindtag-api    = "blindtag.cli:_api_shim"
 [project.gui-scripts]
 blindtag-widget = "blindtag.cli:_widget_shim"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["blindtag*"]
+
+[tool.setuptools.data-files]
+"assets" = [
+    "assets/emoji_library_default.json",
+]
+"assets/images" = [
+    "assets/images/blindtag_logo.png",
+    "assets/images/blindtag_thumbnail_basic.png",
+    "assets/images/calamum_logo_color.png",
+    "assets/images/polymath_global.png",
+]
 
 # ─── pytest ───────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]

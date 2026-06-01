@@ -65,7 +65,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer
 from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -90,8 +90,21 @@ from .notification import NotificationWidget
 
 # ─── Asset paths ──────────────────────────────────────────────────────────────
 
-_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "images"
-_DEFAULT_LIBRARY_PATH = Path(__file__).resolve().parent.parent / "assets" / "emoji_library_default.json"
+def _resolve_assets_root() -> Path:
+    """Resolve the BlindTag asset root for both source-tree and installed-wheel use."""
+    candidates = [
+        Path(__file__).resolve().parent.parent / "assets",
+        Path(sys.executable).resolve().parent.parent / "assets",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+_ASSETS_ROOT = _resolve_assets_root()
+_ASSETS_DIR = _ASSETS_ROOT / "images"
+_DEFAULT_LIBRARY_PATH = _ASSETS_ROOT / "emoji_library_default.json"
 
 # ─── Colour palette ───────────────────────────────────────────────────────────
 
@@ -110,6 +123,10 @@ C_ERROR     = "#e25757"   # Alert Red
 # ─── Timing ───────────────────────────────────────────────────────────────────
 
 NOTIFY_DURATION_MS: int = 4_500  # Notification overlay auto-dismiss duration
+CLIPBOARD_VERIFY_ATTEMPTS: int = 3
+CLIPBOARD_VERIFY_EVENT_PUMPS: int = 3
+DEFAULT_WINDOW_OPACITY: float = 0.96
+BACKGROUND_HIDE_PREVIEW: str = "Clip Watch active - click to return"
 
 # ─── Emoji library ────────────────────────────────────────────────────────────
 
@@ -369,6 +386,7 @@ def _btn_ghost_style() -> str:
         f"border: none; border-radius: 6px; font-size: 9pt; padding: 4px 8px;"
         f"}}"
         f"QPushButton:hover {{ background-color: {C_SURFACE}; }}"
+        f"QPushButton:pressed {{ background-color: #28465d; color: {C_TEXT}; border: 1px solid {C_ACCENT_H}; }}"
     )
 
 
@@ -436,6 +454,9 @@ class _EmojiCard(QWidget):
     def __init__(self, title: str, body: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._expanded = False
+        self.setStyleSheet(
+            f"background-color: #111a25; border: 1px solid {C_LINE}; border-radius: 8px;"
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(2)
@@ -454,7 +475,9 @@ class _EmojiCard(QWidget):
         self._body = QLabel(body)
         self._body.setWordWrap(True)
         self._body.setStyleSheet(
-            f"color: {C_TEXT}; font-size: 10pt; background: transparent; padding: 0 4px 4px 18px;"
+            f"color: {C_TEXT}; font-size: 10pt; background-color: #162331; "
+            f"border: 1px solid rgba(61, 213, 243, 0.10); border-radius: 6px; "
+            f"padding: 8px 10px; margin: 2px 4px 8px 18px;"
         )
         self._body.setVisible(False)
         layout.addWidget(self._body)
@@ -467,17 +490,30 @@ class _EmojiCard(QWidget):
         self._body.setVisible(self._expanded)
 
 
+class _HelpScrim(QWidget):
+    """Dim the main widget body while the help drawer is open."""
+
+    def __init__(self, parent: "BlindTagWindow") -> None:
+        super().__init__(parent)
+        self._win = parent
+        self.hide()
+        self.setStyleSheet("background-color: rgba(4, 8, 12, 168);")
+
+    def mousePressEvent(self, event) -> None:
+        self._win._hide_guidance_panel()
+
+
 class _GuidancePanel(QWidget):
     """Left-side slide-out help panel — 200px overlay, z-ordered above _stack."""
 
     def __init__(self, parent: "BlindTagWindow") -> None:
         super().__init__(parent)
-        self.setFixedWidth(200)
+        self.setFixedWidth(220)
         # Use a class-specific selector so the global QWidget{background} rule
         # in _APP_STYLESHEET cannot bleed through via inheritance.
         self.setStyleSheet(
             f"_GuidancePanel, QWidget#guidance_panel {{"
-            f" background-color: {C_SECONDARY}; border-right: 1px solid {C_LINE}; }}"
+            f" background-color: #0d141d; border-right: 1px solid {C_LINE}; }}"
         )
         self.setObjectName("guidance_panel")
         self.hide()
@@ -501,7 +537,7 @@ class _GuidancePanel(QWidget):
     def reposition(self, parent_height: int, top_offset: int, bottom_offset: int) -> None:
         """Resize/reposition to fill the area between toggle strip and status bar."""
         h = parent_height - top_offset - bottom_offset
-        self.setGeometry(0, top_offset, 200, h)
+        self.setGeometry(0, top_offset, self.width(), h)
 
 
 # ─── Emoji flyout ─────────────────────────────────────────────────────────────
@@ -556,6 +592,7 @@ class _EmojiFlyout(QFrame):
                 f"QPushButton {{ background: transparent; border: none; border-radius: 4px; "
                 f"font-size: 18pt; padding: 0; }}"
                 f"QPushButton:hover {{ background-color: {C_LINE}; }}"
+                f"QPushButton:pressed {{ background-color: #28465d; color: {C_TEXT}; border: 1px solid {C_ACCENT_H}; padding-top: 1px; }}"
             )
             alias = entry["alias"]
             emoji = entry["emoji"]
@@ -582,18 +619,27 @@ class _EmojiFlyout(QFrame):
         outer.addWidget(btn_edit)
 
         self.adjustSize()
-        # Install event filter on parent to dismiss on click-outside
-        parent.installEventFilter(self)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
 
     def _pick(self, emoji: str) -> None:
         self._on_select(emoji)
-        self.hide()
+        QTimer.singleShot(90, self._parent_win._close_emoji_flyout)
+
+    def _trigger_rect_global(self) -> QRect:
+        btn = self._parent_win._btn_emoji
+        top_left = btn.mapToGlobal(btn.rect().topLeft())
+        return QRect(top_left, btn.rect().size())
 
     def eventFilter(self, watched, event) -> bool:
         if event.type() == QEvent.MouseButtonPress and self.isVisible():
-            if not self.geometry().contains(event.position().toPoint()):
-                self.hide()
-        return super().eventFilter(watched, event)
+            global_pos = event.globalPosition().toPoint()
+            if self._trigger_rect_global().contains(global_pos):
+                return False
+            if not self.frameGeometry().contains(global_pos):
+                self._parent_win._close_emoji_flyout()
+        return False
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Escape:
@@ -915,7 +961,7 @@ class BlindTagWindow(QMainWindow):
         self.setWindowTitle("BlindTag")
         self.setMinimumSize(480, 480)
         self.resize(530, 555)
-        self.setWindowOpacity(0.96)
+        self.setWindowOpacity(DEFAULT_WINDOW_OPACITY)
 
         icon_path = _ASSETS_DIR / "blindtag_thumbnail_basic.png"
         if icon_path.exists():
@@ -934,6 +980,7 @@ class BlindTagWindow(QMainWindow):
         # Background posture state
         self._posture: str = "foreground"
         self._bg_notif: NotificationWidget = NotificationWidget(self, NOTIFY_DURATION_MS)
+        self._last_encoded_payload: str = ""
 
         # Emoji library
         self._library = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
@@ -966,6 +1013,8 @@ class BlindTagWindow(QMainWindow):
 
         self._status_bar = self._build_status_bar()
         root.addWidget(self._status_bar)
+
+        self._help_scrim = _HelpScrim(self)
 
         # Guidance panel (overlays _stack)
         self._guidance_panel = _GuidancePanel(self)
@@ -1180,19 +1229,40 @@ class BlindTagWindow(QMainWindow):
 
     def _toggle_guidance_panel(self) -> None:
         if self._guidance_panel.isVisible():
-            self._guidance_panel.hide()
+            self._hide_guidance_panel()
         else:
-            self._reposition_guidance_panel()
-            self._guidance_panel.show()
-            self._guidance_panel.raise_()
+            self._show_guidance_panel()
+
+    def _target_window_opacity(self) -> float:
+        return 1.0 if self._guidance_panel.isVisible() else DEFAULT_WINDOW_OPACITY
+
+    def _show_guidance_panel(self) -> None:
+        self._reposition_guidance_panel()
+        self._reposition_help_scrim()
+        self._help_scrim.show()
+        self._help_scrim.raise_()
+        self._guidance_panel.show()
+        self._guidance_panel.raise_()
+        self.setWindowOpacity(self._target_window_opacity())
+
+    def _hide_guidance_panel(self) -> None:
+        self._guidance_panel.hide()
+        self._help_scrim.hide()
+        self.setWindowOpacity(self._target_window_opacity())
 
     def _reposition_guidance_panel(self) -> None:
         top = self._title_bar.height() + self._toggle_strip.height()
         bottom = self._status_bar.height()
         self._guidance_panel.reposition(self.height(), top, bottom)
 
+    def _reposition_help_scrim(self) -> None:
+        top = self._title_bar.height() + self._toggle_strip.height()
+        bottom = self._status_bar.height()
+        self._help_scrim.setGeometry(0, top, self.width(), self.height() - top - bottom)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._reposition_help_scrim()
         if self._guidance_panel.isVisible():
             self._reposition_guidance_panel()
 
@@ -1201,9 +1271,10 @@ class BlindTagWindow(QMainWindow):
     # =========================================================================
 
     def _open_emoji_flyout(self) -> None:
-        if self._emoji_flyout is not None:
-            self._emoji_flyout.hide()
-            self._emoji_flyout.deleteLater()
+        if self._emoji_flyout is not None and self._emoji_flyout.isVisible():
+            self._close_emoji_flyout()
+            return
+        self._close_emoji_flyout()
         self._emoji_flyout = _EmojiFlyout(
             self,
             self._library,
@@ -1220,22 +1291,30 @@ class BlindTagWindow(QMainWindow):
         self._emoji_flyout.show()
         self._emoji_flyout.raise_()
 
+    def _close_emoji_flyout(self) -> None:
+        if self._emoji_flyout is None:
+            return
+        self._emoji_flyout.hide()
+        self._emoji_flyout.deleteLater()
+        self._emoji_flyout = None
+
+    def _open_library_editor(self) -> None:
+        self._close_emoji_flyout()
+        self._show_library_editor()
+
     def _insert_emoji(self, emoji: str) -> None:
         """Single-field insert: place Unicode code tokens into anchor input only."""
         cur = self._anchor_input.textCursor()
         cur.insertText(_format_codepoints(emoji))
         self._anchor_input.setTextCursor(cur)
 
-    def _open_library_editor(self) -> None:
-        if self._emoji_flyout is not None:
-            self._emoji_flyout.hide()
-        self._show_library_editor()
-
     # =========================================================================
     # Core actions
     # =========================================================================
 
     def _do_encode(self) -> None:
+        self._last_encoded_payload = ""
+        self._encode_output.clear()
         raw_anchor = self._anchor_input.toPlainText().strip()
         hidden = self._hidden_input.toPlainText().strip()
 
@@ -1258,6 +1337,7 @@ class BlindTagWindow(QMainWindow):
             self._set_status(f"✕  {exc}", C_ERROR)
             return
 
+        self._last_encoded_payload = result
         self._encode_output.setPlainText(result)
         self._set_status(
             f"✓  Encoded {len(hidden)} char payload into "
@@ -1265,13 +1345,32 @@ class BlindTagWindow(QMainWindow):
             C_SUCCESS,
         )
 
+    def _copy_text_with_verification(self, text: str) -> bool:
+        """Copy *text* to the system clipboard and verify readback."""
+        clipboard = QApplication.clipboard()
+        for _ in range(CLIPBOARD_VERIFY_ATTEMPTS):
+            try:
+                clipboard.setText(text)
+            except Exception:
+                continue
+            for _ in range(CLIPBOARD_VERIFY_EVENT_PUMPS):
+                QApplication.processEvents()
+                if clipboard.text() == text:
+                    return True
+        return clipboard.text() == text
+
     def _encode_and_copy(self) -> None:
         self._do_encode()
-        result = self._encode_output.toPlainText()
+        result = self._last_encoded_payload
         if not result:
             return
-        QApplication.clipboard().setText(result)
-        self._set_status("✓  Encoded payload copied to clipboard.", C_SUCCESS)
+        if self._copy_text_with_verification(result):
+            self._set_status("✓  Encoded payload copied to clipboard and verified.", C_SUCCESS)
+            return
+        self._set_status(
+            "✕  Clipboard copy could not be verified. Try again or copy manually from Output.",
+            C_WARNING,
+        )
 
     def _do_decode(self) -> None:
         raw = self._raw_input.toPlainText()
@@ -1297,6 +1396,7 @@ class BlindTagWindow(QMainWindow):
             self._set_status("·  No hidden payload found.", C_MUTED)
 
     def _clear_encode(self) -> None:
+        self._last_encoded_payload = ""
         self._anchor_input.clear()
         self._hidden_input.clear()
         self._encode_output.clear()
@@ -1399,7 +1499,7 @@ class BlindTagWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
         self.setWindowOpacity(1.0)
-        QTimer.singleShot(1500, lambda: self.setWindowOpacity(0.96))
+        QTimer.singleShot(1500, lambda: self.setWindowOpacity(self._target_window_opacity()))
 
     def _apply_decoded_payload(self, message: str, raw: str, preview: str) -> None:
         """Populate the decode panel with a detected payload."""
@@ -1486,6 +1586,8 @@ class BlindTagWindow(QMainWindow):
         """Enter background posture: hide window, watcher stays alive."""
         self._posture = "background"
         self.hide()
+        if self._watcher_active:
+            self._ensure_bg_notification().show_for(BACKGROUND_HIDE_PREVIEW, persistent=True)
 
     def closeEvent(self, event) -> None:
         self._hide_background_notification()

@@ -76,14 +76,13 @@ pip install -e .
 # Runtime + dev/testing tools
 pip install -e ".[dev]"
 ```
+# ⬡ BlindTag
 
-### Explicit requirements
+<p align="center">
+  <img src="assets/images/blindtag_logo.png" alt="BlindTag" width="180">
+</p>
 
-```bash
-pip install -r requirements.txt       # runtime
-pip install -e ".[dev]"               # + pytest, httpx, coverage
-```
-
+> Unicode Plane 14 Steganographic Obfuscation Toolkit
 **Python requirement:** 3.11 or later.
 
 ### Linux clipboard support
@@ -248,14 +247,14 @@ Interactive docs: **http://127.0.0.1:8000/docs**
 
 Read-only query surface for the retained BlindTag operation ledger.
 
-| Parameter | Meaning |
-| --------- | ------- |
-| `request_id` | Filter by the API request id emitted in `X-Request-Id` |
-| `operation` | Filter by operation name (`encode`, `decode`, `log_query`, `log_export`) |
-| `level` | Filter by severity (`debug`, `info`, `warning`, `error`, `critical`) |
-| `policy_mode` | Filter by retained policy posture (`operational`, `security`, `forensic`) |
+| Parameter      | Meaning                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `request_id`   | Filter by the API request id emitted in `X-Request-Id`                                                                    |
+| `operation`    | Filter by operation name (`encode`, `decode`, `log_query`, `log_export`)                                                  |
+| `level`        | Filter by severity (`debug`, `info`, `warning`, `error`, `critical`)                                                      |
+| `policy_mode`  | Filter by retained policy posture (`operational`, `security`, `forensic`)                                                 |
 | `action_phase` | Filter by provenance handoff phase (`received`, `verified`, `exported`, `blocked`, `quarantined`, `unpacked`, `released`) |
-| `limit` | Maximum records returned |
+| `limit`        | Maximum records returned                                                                                                  |
 
 ### `POST /v1/log/export`
 
@@ -289,11 +288,11 @@ blindtag-widget
 
 ### Launch surfaces
 
-| Surface                                   | Intended use                        | Terminal behavior                                                                                              |
-| ----------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `blindtag-widget` / `blindtag-widget.exe` | Required widget launch surface      | **No terminal** — this is the required widget behavior                                                         |
+| Surface                                   | Intended use                         | Terminal behavior                                                                                              |
+| ----------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `blindtag-widget` / `blindtag-widget.exe` | Required widget launch surface       | **No terminal** — this is the required widget behavior                                                         |
 | `blindtag widget`                         | Supported CLI compatibility launcher | Hands off to the dedicated widget surface and should return the calling CLI promptly in installed environments |
-| `python run_widget.py`                    | Direct source-tree developer launch | **Currently keeps a terminal attached** — useful only for development/debug, not acceptable as final widget UX |
+| `python run_widget.py`                    | Direct source-tree developer launch  | **Currently keeps a terminal attached** — useful only for development/debug, not acceptable as final widget UX |
 
 ### Hotkeys
 
@@ -342,22 +341,22 @@ pytest --cov=blindtag --cov-report=term-missing
 
 ### Test coverage map
 
-| Class                         | Requirement                                            |
-| ----------------------------- | ------------------------------------------------------ |
-| `TestRoundTrip`               | Encode→decode fidelity across payload types            |
-| `TestAnchorModification`      | Payload integrity through whitespace/newline mutations |
-| `TestAnchorEdgeCases`         | Multi-byte emoji, CJK, RTL, alphanumeric anchors       |
-| `TestValidationBoundaries`    | `InvalidPayloadError` for every out-of-range char      |
-| `TestDecodeNoPayload`         | `None` return on clean strings                         |
-| `TestCrashImmunity`           | No exceptions on arbitrary / corrupted Plane 14 input  |
-| `TestNormalizationResistance` | NFC / NFD / NFKC / NFKD payload preservation           |
-| `TestTagCancelSemantics`      | Hard stop at U+E007F; second payload ignored           |
-| `TestStripPlane14`            | Sanitization utility correctness                       |
-| `TestLongPayloads`            | 128-char and 512-char payload integrity                |
-| `TestEncodeEndpoint`          | API schema, validation, error codes                    |
-| `TestDecodeEndpoint`          | API round-trip, miss feedback, size limits             |
-| `TestReportingEndpoints`      | Retained API query/export coverage and trust gating    |
-| `TestRetainedExport`          | JSONL export family, checksums, and optional signing   |
+| Class                         | Requirement                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| `TestRoundTrip`               | Encode→decode fidelity across payload types                                 |
+| `TestAnchorModification`      | Payload integrity through whitespace/newline mutations                      |
+| `TestAnchorEdgeCases`         | Multi-byte emoji, CJK, RTL, alphanumeric anchors                            |
+| `TestValidationBoundaries`    | `InvalidPayloadError` for every out-of-range char                           |
+| `TestDecodeNoPayload`         | `None` return on clean strings                                              |
+| `TestCrashImmunity`           | No exceptions on arbitrary / corrupted Plane 14 input                       |
+| `TestNormalizationResistance` | NFC / NFD / NFKC / NFKD payload preservation                                |
+| `TestTagCancelSemantics`      | Hard stop at U+E007F; second payload ignored                                |
+| `TestStripPlane14`            | Sanitization utility correctness                                            |
+| `TestLongPayloads`            | 128-char and 512-char payload integrity                                     |
+| `TestEncodeEndpoint`          | API schema, validation, error codes                                         |
+| `TestDecodeEndpoint`          | API round-trip, miss feedback, size limits                                  |
+| `TestReportingEndpoints`      | Retained API query/export coverage and trust gating                         |
+| `TestRetainedExport`          | JSONL export family, checksums, and optional signing                        |
 | `TestHighTrustProvenance`     | Elevated provenance modes, chain/seal verification, sandbox handoff posture |
 
 ---

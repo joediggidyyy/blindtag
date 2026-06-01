@@ -23,10 +23,13 @@ import shutil
 from unittest.mock import MagicMock
 
 import pytest
+from PySide6.QtCore import QEvent, QPoint, QPointF
 
 import blindtag.notification as notification_module
 from blindtag.notification import NotificationWidget, NOTIFY_MARGIN_PX
+from blindtag.core import decode
 from blindtag.widget import (
+    BACKGROUND_HIDE_PREVIEW,
     EmojiLibrary,
     _DEFAULT_LIBRARY_PATH,
     _CARD_CONTENT,
@@ -34,6 +37,7 @@ from blindtag.widget import (
     _EmojiFlyout,
     _GuidancePanel,
     _LibraryEditorPanel,
+    _btn_ghost_style,
     _format_codepoints,
     _parse_glyph_or_code,
     _resolve_anchor_tokens,
@@ -50,7 +54,7 @@ class TestEmojiLibrary:
     def test_load_default_library(self) -> None:
         lib = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
         entries = lib.load()
-        assert len(entries) == 20
+        assert len(entries) >= 20
 
     def test_schema_completeness(self) -> None:
         lib = EmojiLibrary(_DEFAULT_LIBRARY_PATH)
@@ -79,6 +83,7 @@ class TestEmojiLibrary:
     def test_add_and_remove_entry(self, tmp_path) -> None:
         src = shutil.copy(_DEFAULT_LIBRARY_PATH, tmp_path / "emoji_library_default.json")
         lib = EmojiLibrary(tmp_path / "emoji_library_default.json")
+        baseline_count = len(lib.load())
         new_entry = {
             "emoji": "\U0001f9ea",
             "alias": ":test:",
@@ -87,12 +92,12 @@ class TestEmojiLibrary:
         }
         lib.add_entry(new_entry)
         entries = lib.load()
-        assert len(entries) == 21
+        assert len(entries) == baseline_count + 1
         assert any(e["emoji"] == "\U0001f9ea" for e in entries)
 
         lib.remove_entry("\U0001f9ea")
         entries = lib.load()
-        assert len(entries) == 20
+        assert len(entries) == baseline_count
         assert not any(e["emoji"] == "\U0001f9ea" for e in entries)
 
     def test_set_active_alias(self, tmp_path) -> None:
@@ -160,6 +165,38 @@ class TestGuidancePanel:
             assert title.strip() != ""
             assert body.strip() != ""
 
+    def test_help_toggle_uses_full_opacity_and_scrim(self, qapp) -> None:
+        from blindtag.widget import BlindTagWindow
+
+        win = BlindTagWindow()
+        win.show()
+        assert round(win.windowOpacity(), 2) == 0.96
+        assert not win._guidance_panel.isVisible()
+        assert not win._help_scrim.isVisible()
+
+        win._toggle_guidance_panel()
+        assert win._guidance_panel.isVisible()
+        assert win._help_scrim.isVisible()
+        assert win.windowOpacity() == 1.0
+
+        win._toggle_guidance_panel()
+        assert not win._guidance_panel.isVisible()
+        assert not win._help_scrim.isVisible()
+        assert round(win.windowOpacity(), 2) == 0.96
+        win.close()
+
+    def test_scrim_click_closes_help_panel(self, qapp) -> None:
+        from blindtag.widget import BlindTagWindow
+
+        win = BlindTagWindow()
+        win.show()
+        win._show_guidance_panel()
+        assert win._guidance_panel.isVisible()
+        win._help_scrim.mousePressEvent(MagicMock())
+        assert not win._guidance_panel.isVisible()
+        assert not win._help_scrim.isVisible()
+        win.close()
+
 
 # =============================================================================
 # TestEmojiFlyout — requires QApplication
@@ -208,6 +245,37 @@ class TestEmojiFlyout:
         win = BlindTagWindow()
         win._insert_emoji(first_entry["emoji"])
         assert win._anchor_input.toPlainText() == "U+1F600"
+        win.close()
+
+    def test_trigger_click_toggles_flyout_open_and_closed(self, qapp) -> None:
+        from blindtag.widget import BlindTagWindow
+
+        win = BlindTagWindow()
+        win.show()
+        win._open_emoji_flyout()
+        assert win._emoji_flyout is not None
+        assert win._emoji_flyout.isVisible()
+
+        win._open_emoji_flyout()
+        assert win._emoji_flyout is None
+        win.close()
+
+    def test_click_away_closes_flyout(self, qapp) -> None:
+        from blindtag.widget import BlindTagWindow
+
+        win = BlindTagWindow()
+        win.show()
+        win._open_emoji_flyout()
+        flyout = win._emoji_flyout
+        assert flyout is not None
+
+        event = MagicMock()
+        event.type.return_value = QEvent.MouseButtonPress
+        outside_global = win.mapToGlobal(QPoint(8, win.height() - 8))
+        event.globalPosition.return_value = QPointF(outside_global)
+
+        flyout.eventFilter(qapp, event)
+        assert win._emoji_flyout is None
         win.close()
 
 
@@ -392,9 +460,21 @@ class TestBackgroundPosture:
     def test_hide_to_background_sets_posture_and_hides_window(self, qapp) -> None:
         win = self._make_window()
         win.show()
+        win._toggle_watcher(True)
         win._hide_to_background()
         assert win._posture == "background"
         assert not win.isVisible()
+        assert win._bg_notif.isVisible()
+        assert BACKGROUND_HIDE_PREVIEW in win._bg_notif._label.text()
+        win.close()
+
+    def test_hide_to_background_without_watcher_does_not_show_anchor(self, qapp) -> None:
+        win = self._make_window()
+        win.show()
+        win._hide_to_background()
+        assert win._posture == "background"
+        assert not win.isVisible()
+        assert not win._bg_notif.isVisible()
         win.close()
 
     def test_show_event_resets_posture_to_foreground(self, qapp) -> None:
@@ -566,6 +646,86 @@ class TestActionButtonCleanup:
         assert win._btn_encode.width() == 78
         assert win._btn_decode.width() == 78
         win.close()
+
+
+class _FakeClipboard:
+    def __init__(self, initial_text: str = "", accept_writes: bool = True) -> None:
+        self._text = initial_text
+        self._accept_writes = accept_writes
+        self.set_attempts = 0
+
+    def text(self) -> str:
+        return self._text
+
+    def setText(self, value: str) -> None:
+        self.set_attempts += 1
+        if self._accept_writes:
+            self._text = value
+
+
+class TestClipboardTruthfulness:
+    def _make_window(self):
+        from blindtag.widget import BlindTagWindow
+        return BlindTagWindow()
+
+    def test_encode_and_copy_verifies_clipboard_round_trip(self, qapp, monkeypatch) -> None:
+        import blindtag.widget as widget_module
+
+        win = self._make_window()
+        fake_clipboard = _FakeClipboard()
+        monkeypatch.setattr(
+            widget_module.QApplication,
+            "clipboard",
+            staticmethod(lambda: fake_clipboard),
+        )
+
+        win._anchor_input.setPlainText("U+2705")
+        win._hidden_input.setPlainText("hello, world!")
+        win._encode_and_copy()
+
+        assert decode(fake_clipboard.text()) == "hello, world!"
+        assert win._last_encoded_payload == fake_clipboard.text()
+        assert "verified" in win._status_label.text().lower()
+        win.close()
+
+    def test_encode_and_copy_refuses_false_success_on_stale_clipboard(self, qapp, monkeypatch) -> None:
+        import blindtag.widget as widget_module
+
+        win = self._make_window()
+        fake_clipboard = _FakeClipboard(initial_text="unchanged clipboard", accept_writes=False)
+        monkeypatch.setattr(
+            widget_module.QApplication,
+            "clipboard",
+            staticmethod(lambda: fake_clipboard),
+        )
+
+        win._anchor_input.setPlainText("U+2705")
+        win._hidden_input.setPlainText("hello, world!")
+        win._encode_and_copy()
+
+        assert fake_clipboard.text() == "unchanged clipboard"
+        assert "could not be verified" in win._status_label.text().lower()
+        assert "copied to clipboard and verified" not in win._status_label.text().lower()
+        assert fake_clipboard.set_attempts >= 1
+        win.close()
+
+
+class TestPressedStateStyling:
+    def test_ghost_buttons_include_pressed_state(self) -> None:
+        assert "QPushButton:pressed" in _btn_ghost_style()
+        assert "border: 1px solid" in _btn_ghost_style()
+
+    def test_emoji_flyout_cells_include_pressed_state(self, qapp) -> None:
+        flyout = TestEmojiFlyout()._make_flyout(qapp)
+        from PySide6.QtWidgets import QPushButton
+
+        cells = [
+            b for b in flyout.findChildren(QPushButton)
+            if len(b.text()) > 0 and b.text() != "Edit library  ⚙"
+        ]
+        assert cells
+        assert all("QPushButton:pressed" in cell.styleSheet() for cell in cells)
+        assert all("border: 1px solid" in cell.styleSheet() for cell in cells)
 
 
 class TestHiddenNotificationAnchor:

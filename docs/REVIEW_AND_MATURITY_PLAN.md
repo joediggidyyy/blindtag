@@ -989,13 +989,13 @@ Where signing is configured for the environment, retained JSON artifacts should 
 
 #### N.1 — Evidence snapshot (2026-05-31)
 
-| Open item                                        | Evidence                                                                                                                                         | Verified state                                                                                                                                |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Terminal-free widget launch is non-negotiable    | Operator clarification on 2026-05-31; handoff gate at top of this document                                                                       | Requirement is locked: widget launch must be terminal-free.                                                                                   |
-| Current widget CLI duplication creates ambiguity | `pyproject.toml` has `blindtag-widget` under `[project.gui-scripts]`; `blindtag/cli.py` exposes `blindtag widget`                     | Current correction direction is to keep the CLI launchpoint and adapt it to hand off to `blindtag-widget.exe` truthfully instead of removing it. |
-| Top toggle buttons remain visually too wide      | Operator screenshot after the 92px width change; current `widget.py` shows `setFixedWidth(92)` for both toggles                                  | The last geometry tweak landed in code but did not reach the approved design target.                                                          |
-| Hidden notification still not observed live      | Operator screenshot and follow-up report; current `notification.py` contains `_target_screen()`, `WA_ShowWithoutActivating`, and persistent mode | The concept and partial hardening exist, but live visibility remains unresolved.                                                              |
-| Close lane has an unclosed runtime defect        | Operator screenshot includes traceback pointing at `blindtag/widget.py:1468` (`closeEvent`)                                                      | The close path is not yet proven stable in the live hidden-notification workflow.                                                             |
+| Open item                                        | Evidence                                                                                                                                         | Verified state                                                                                                                                   |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Terminal-free widget launch is non-negotiable    | Operator clarification on 2026-05-31; handoff gate at top of this document                                                                       | Requirement is locked: widget launch must be terminal-free.                                                                                      |
+| Current widget CLI duplication creates ambiguity | `pyproject.toml` has `blindtag-widget` under `[project.gui-scripts]`; `blindtag/cli.py` exposes `blindtag widget`                                | Current correction direction is to keep the CLI launchpoint and adapt it to hand off to `blindtag-widget.exe` truthfully instead of removing it. |
+| Top toggle buttons remain visually too wide      | Operator screenshot after the 92px width change; current `widget.py` shows `setFixedWidth(92)` for both toggles                                  | The last geometry tweak landed in code but did not reach the approved design target.                                                             |
+| Hidden notification still not observed live      | Operator screenshot and follow-up report; current `notification.py` contains `_target_screen()`, `WA_ShowWithoutActivating`, and persistent mode | The concept and partial hardening exist, but live visibility remains unresolved.                                                                 |
+| Close lane has an unclosed runtime defect        | Operator screenshot includes traceback pointing at `blindtag/widget.py:1468` (`closeEvent`)                                                      | The close path is not yet proven stable in the live hidden-notification workflow.                                                                |
 
 ---
 
@@ -1104,7 +1104,7 @@ Per `docs/guides/POLYMATH_SECURITY_MEASURES_AND_EXPECTATIONS.md`, Pass N must pr
 
 | #          | Artifact                                         | Action | Notes                                                                                                                                                     |
 | ---------- | ------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1          | `blindtag/cli.py` and/or `pyproject.toml`        | MODIFY | Adapt the noncompliant `blindtag widget` route so it hands off to the same truthful widget launch contract without removing the public CLI launchpoint.    |
+| 1          | `blindtag/cli.py` and/or `pyproject.toml`        | MODIFY | Adapt the noncompliant `blindtag widget` route so it hands off to the same truthful widget launch contract without removing the public CLI launchpoint.   |
 | 2          | `blindtag/widget.py`                             | MODIFY | Notification-path remediation, close-path stabilization, and top-toggle visual parity correction.                                                         |
 | 3          | `blindtag/notification.py`                       | MODIFY | Only if required by the hidden-notification visibility/root-cause findings.                                                                               |
 | 4          | `tests/test_widget.py`                           | MODIFY | Add focused regression coverage for the specific N-A / N-B / N-C acceptance boundaries.                                                                   |
@@ -1331,16 +1331,16 @@ This pass must preserve the local project rules and already-locked design preced
 
 #### O.8 — Deliverables and sequence
 
-| # | Artifact | Action | Notes |
-| --- | --- | --- | --- |
-| 1 | `blindtag/widget.py` | MODIFY | Clipboard truthfulness hardening + pressed-state feedback only within the bounded Pass O lanes |
-| 2 | `tests/test_widget.py` | MODIFY | Focused clipboard reliability and click-feedback regression coverage |
-| 3 | `catalog/test_definitions.json` | MODIFY | Update widget notes only if the focused coverage contract materially changes |
-| 4 | `CHANGELOG.md` | MODIFY | Record Pass O only after validation gate passes |
-| Gate A | focused widget regression | RUN | Required before full Calamum gate |
-| Gate B | `calamum test run blindtag-all --project <path>` | RUN | Must return `decision: go` |
-| Gate C | evidence integrity verification | RUN | Verify manifest/checksum set; verify signatures when configured |
-| Gate D | installed live handoff proof | RUN | `pip install -e .` then `blindtag-widget.exe` and repeat the glyph scenario |
+| #      | Artifact                                         | Action | Notes                                                                                          |
+| ------ | ------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------- |
+| 1      | `blindtag/widget.py`                             | MODIFY | Clipboard truthfulness hardening + pressed-state feedback only within the bounded Pass O lanes |
+| 2      | `tests/test_widget.py`                           | MODIFY | Focused clipboard reliability and click-feedback regression coverage                           |
+| 3      | `catalog/test_definitions.json`                  | MODIFY | Update widget notes only if the focused coverage contract materially changes                   |
+| 4      | `CHANGELOG.md`                                   | MODIFY | Record Pass O only after validation gate passes                                                |
+| Gate A | focused widget regression                        | RUN    | Required before full Calamum gate                                                              |
+| Gate B | `calamum test run blindtag-all --project <path>` | RUN    | Must return `decision: go`                                                                     |
+| Gate C | evidence integrity verification                  | RUN    | Verify manifest/checksum set; verify signatures when configured                                |
+| Gate D | installed live handoff proof                     | RUN    | `pip install -e .` then `blindtag-widget.exe` and repeat the glyph scenario                    |
 
 #### O.9 — Acceptance criteria
 
@@ -1360,18 +1360,18 @@ Use this checklist as the execution control surface for Pass O. It is intentiona
 
 **Enforcement rule:** a checklist item is not complete just because the code landed or tests passed. Each item must also survive the final installed live-launch observation on `blindtag-widget.exe` before final ORACL signoff.
 
-| # | Precision item | Enforcement rule | Minimum automated proof | Mandatory observed live-launch signoff |
-| --- | --- | --- | --- | --- |
-| O-1 | Scope remains inside Pass O | No implementation may widen beyond clipboard truthfulness, pressed-state feedback, focused tests, Calamum validation, and evidence verification. No architecture drift, no new runtime dependency, no API/codec contract change. | Diff review against `widget.py`, `tests/test_widget.py`, `catalog/test_definitions.json`, and `CHANGELOG.md` only unless explicitly justified by the locked lane. | ORACL confirms the installed widget behavior changed only in the expected clipboard/click-feedback surfaces; no unrelated UI, API, or launch-path drift is visible. |
-| O-2 | Encoded source-of-truth retained | Encode path must retain the exact encoded composite in runtime memory before any clipboard handoff. | Focused widget test proves encode result is preserved and reused by the copy lane. | ORACL launches the installed widget, encodes the glyph scenario, and confirms the copied/decode-ready result behaves as one coherent encode/copy action rather than a stale UI readback accident. |
-| O-3 | Clipboard write is bounded and verified | Copy logic must use bounded retry/backoff and must not claim success until the clipboard update is verified or positively distinguished from stale prior content. | Focused widget tests cover success path plus refusal/stale-content failure path. | ORACL observes the installed widget either: (a) truthfully reports verified copy success and the pasted decode succeeds, or (b) truthfully reports failure without a false success claim. |
-| O-4 | Success/failure messaging is truthful | The widget must never emit `Encoded payload copied to clipboard.` when the update was not verified. Failure text must be calm, explicit, and next-action oriented. | Focused widget assertions on exact success/failure status text or equivalent message-state contract. | ORACL observes the installed widget messaging during the live glyph scenario and confirms the message matches what actually happened on the clipboard/decode path. |
-| O-5 | Ghost/menu pressed states land | `_btn_ghost_style()` must include a visible `:pressed` state and preserve the calm Polymath palette. | Style regression check in `tests/test_widget.py` where practical. | ORACL clicks the installed surface and visually confirms ghost/menu-like controls no longer look inert during activation. |
-| O-6 | Emoji flyout pressed states land | `_EmojiFlyout` cell styling must include a visible `:pressed` state aligned to the same design language. | Focused widget/style regression coverage where practical. | ORACL opens the installed emoji flyout and visually confirms click registration is obvious during cell activation. |
-| O-7 | Focused regression gate passes | Only the narrow Pass O fault family should be exercised first; no skip-by-hope path to the full gate. | Clean focused widget regression run for clipboard truthfulness and pressed-state coverage. | ORACL repeats the same user-facing behavior live after the focused gate so the pass is not closed on headless proof alone. |
-| O-8 | Full Calamum gate passes | `calamum test run blindtag-all --project <blindtag-root>` must return `decision: go` with no unresolved retained-report failures. | Retained Calamum run packet and console evidence. | ORACL performs the installed live launch after the passing Calamum run and confirms the exact audited glyph scenario succeeds on the shipped surface, not just in automation. |
-| O-9 | Evidence integrity is verified | Required retained artifacts (`report_json`, `report_md`, `manifest_json`, `checksums_json`, sidecars where emitted) must exist and verify; signed JSON artifacts must also verify when signing is configured. | Checksum/manifest verification; signature verification when configured; names-only record when signing is absent. | ORACL signs off only after the live launch being used for final approval is tied back to the verified retained evidence packet for the same pass. |
-| O-10 | Final installed handoff proof clears | `pip install -e .` must precede the last signoff run, and `blindtag-widget.exe` is the mandatory final approval surface. | Reinstall completed after the last relevant code/edit pass. | ORACL personally launches `blindtag-widget.exe`, runs the glyph encode -> clipboard -> decode scenario, confirms pressed-state feedback, and records this observed run as the final signoff event. |
+| #    | Precision item                          | Enforcement rule                                                                                                                                                                                                                 | Minimum automated proof                                                                                                                                           | Mandatory observed live-launch signoff                                                                                                                                                             |
+| ---- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O-1  | Scope remains inside Pass O             | No implementation may widen beyond clipboard truthfulness, pressed-state feedback, focused tests, Calamum validation, and evidence verification. No architecture drift, no new runtime dependency, no API/codec contract change. | Diff review against `widget.py`, `tests/test_widget.py`, `catalog/test_definitions.json`, and `CHANGELOG.md` only unless explicitly justified by the locked lane. | ORACL confirms the installed widget behavior changed only in the expected clipboard/click-feedback surfaces; no unrelated UI, API, or launch-path drift is visible.                                |
+| O-2  | Encoded source-of-truth retained        | Encode path must retain the exact encoded composite in runtime memory before any clipboard handoff.                                                                                                                              | Focused widget test proves encode result is preserved and reused by the copy lane.                                                                                | ORACL launches the installed widget, encodes the glyph scenario, and confirms the copied/decode-ready result behaves as one coherent encode/copy action rather than a stale UI readback accident.  |
+| O-3  | Clipboard write is bounded and verified | Copy logic must use bounded retry/backoff and must not claim success until the clipboard update is verified or positively distinguished from stale prior content.                                                                | Focused widget tests cover success path plus refusal/stale-content failure path.                                                                                  | ORACL observes the installed widget either: (a) truthfully reports verified copy success and the pasted decode succeeds, or (b) truthfully reports failure without a false success claim.          |
+| O-4  | Success/failure messaging is truthful   | The widget must never emit `Encoded payload copied to clipboard.` when the update was not verified. Failure text must be calm, explicit, and next-action oriented.                                                               | Focused widget assertions on exact success/failure status text or equivalent message-state contract.                                                              | ORACL observes the installed widget messaging during the live glyph scenario and confirms the message matches what actually happened on the clipboard/decode path.                                 |
+| O-5  | Ghost/menu pressed states land          | `_btn_ghost_style()` must include a visible `:pressed` state and preserve the calm Polymath palette.                                                                                                                             | Style regression check in `tests/test_widget.py` where practical.                                                                                                 | ORACL clicks the installed surface and visually confirms ghost/menu-like controls no longer look inert during activation.                                                                          |
+| O-6  | Emoji flyout pressed states land        | `_EmojiFlyout` cell styling must include a visible `:pressed` state aligned to the same design language.                                                                                                                         | Focused widget/style regression coverage where practical.                                                                                                         | ORACL opens the installed emoji flyout and visually confirms click registration is obvious during cell activation.                                                                                 |
+| O-7  | Focused regression gate passes          | Only the narrow Pass O fault family should be exercised first; no skip-by-hope path to the full gate.                                                                                                                            | Clean focused widget regression run for clipboard truthfulness and pressed-state coverage.                                                                        | ORACL repeats the same user-facing behavior live after the focused gate so the pass is not closed on headless proof alone.                                                                         |
+| O-8  | Full Calamum gate passes                | `calamum test run blindtag-all --project <blindtag-root>` must return `decision: go` with no unresolved retained-report failures.                                                                                                | Retained Calamum run packet and console evidence.                                                                                                                 | ORACL performs the installed live launch after the passing Calamum run and confirms the exact audited glyph scenario succeeds on the shipped surface, not just in automation.                      |
+| O-9  | Evidence integrity is verified          | Required retained artifacts (`report_json`, `report_md`, `manifest_json`, `checksums_json`, sidecars where emitted) must exist and verify; signed JSON artifacts must also verify when signing is configured.                    | Checksum/manifest verification; signature verification when configured; names-only record when signing is absent.                                                 | ORACL signs off only after the live launch being used for final approval is tied back to the verified retained evidence packet for the same pass.                                                  |
+| O-10 | Final installed handoff proof clears    | `pip install -e .` must precede the last signoff run, and `blindtag-widget.exe` is the mandatory final approval surface.                                                                                                         | Reinstall completed after the last relevant code/edit pass.                                                                                                       | ORACL personally launches `blindtag-widget.exe`, runs the glyph encode -> clipboard -> decode scenario, confirms pressed-state feedback, and records this observed run as the final signoff event. |
 
 **Hard stop rule:** if any item above lacks its corresponding live-launch observation, Pass O remains open even if pytest and Calamum are green. Green bars are helpful; they are not a hall pass.
 
@@ -1399,14 +1399,14 @@ Use this checklist as the execution control surface for Pass O. It is intentiona
 
 ##### Governance alignment assessment
 
-| Governance surface | Verdict | Evidence basis |
-| --- | --- | --- |
-| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass O remains widget/test/catalog/changelog bounded, preserves dependency policy, and keeps API/codec/public-surface stability intact. |
-| BlindTag handoff gate at top of this plan | ALIGNED | Pass O requires installed `blindtag-widget.exe` live observation before final signoff. |
-| Polymath security expectations | ALIGNED | Names-only evidence, fail-closed publish gate, no new secret surface, and required retained-evidence verification are all explicitly preserved. |
-| Polymath user-facing style expectations | ALIGNED | The lane centers truthful operator messaging, visible interaction feedback, and evidence-backed next-step clarity. |
-| Calamum validation discipline | ALIGNED | The pass requires focused regression evidence plus full `blindtag-all` and retained artifact verification rather than ad hoc pytest-only closure. |
-| Publish governance | ALIGNED | PyPI remains blocked until live installed-surface proof and verified retained evidence clear the exact audited failure scenario. |
+| Governance surface                                               | Verdict | Evidence basis                                                                                                                                    |
+| ---------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass O remains widget/test/catalog/changelog bounded, preserves dependency policy, and keeps API/codec/public-surface stability intact.           |
+| BlindTag handoff gate at top of this plan                        | ALIGNED | Pass O requires installed `blindtag-widget.exe` live observation before final signoff.                                                            |
+| Polymath security expectations                                   | ALIGNED | Names-only evidence, fail-closed publish gate, no new secret surface, and required retained-evidence verification are all explicitly preserved.   |
+| Polymath user-facing style expectations                          | ALIGNED | The lane centers truthful operator messaging, visible interaction feedback, and evidence-backed next-step clarity.                                |
+| Calamum validation discipline                                    | ALIGNED | The pass requires focused regression evidence plus full `blindtag-all` and retained artifact verification rather than ad hoc pytest-only closure. |
+| Publish governance                                               | ALIGNED | PyPI remains blocked until live installed-surface proof and verified retained evidence clear the exact audited failure scenario.                  |
 
 ##### Remaining blockers to final signoff
 
@@ -1702,16 +1702,16 @@ The logging hook reservation described in `CLI_SCHEMA.md` is **not** fully imple
 
 #### Gap matrix
 
-| Area | Planned contract | Current state | Gap verdict | Recommendation |
-| ---- | ---------------- | ------------- | ----------- | -------------- |
-| Logger bootstrap | Global CLI logging control plus `_configure_logging()` hook reservation | Absent in `blindtag/cli.py`; no global `--log-level` / `--verbose` | **High** | Land the bootstrap hook first so later reporting work does not have to reopen CLI routing |
-| Library logger reservation | `logging.getLogger(__name__)` in API/core without import-time handler attachment | No module logger reservation present | **Medium** | Add named loggers in `core.py` and `api.py` without attaching handlers at import time |
-| Structured event schema | Timestamped operation records with outcome/error metadata | No BlindTag-owned structured event emission | **High** | Lock an event schema before choosing storage so tests and exports share one contract |
-| Retained storage | Queryable retained event history | No storage layer selected or implemented | **High** | Prefer one append-only authority first; defer multi-backend ambition until after the schema and query needs are proven |
-| Reporting endpoints | `/log`, `/log/export`, or equivalent caller-facing reporting surface | No reporting endpoints exist | **High** | Scope read-only query/export endpoints only for the first pass; avoid write/mutation/report management surfaces |
-| Severity filtering | Caller-selectable thresholds (`error+`, `debug`, etc.) | No event filtering surface exists; only Uvicorn verbosity for the server process | **Medium** | Make filtering a query concern on top of stored structured levels, not a separate bespoke reporting grammar |
-| Correlation continuity | Request ID linked to retained evidence and exported reports | `X-Request-Id` exists, but is not persisted into a BlindTag-owned event/report layer | **Medium** | Reuse `X-Request-Id` as the primary per-request join key rather than inventing a second correlation token |
-| Validation/governance | Reporting lanes and tests in Calamum + pytest | No reporting catalog/test coverage exists | **High** | Add reporting-specific catalog entries and tests in the same pass as the first shipped reporting surface |
+| Area                       | Planned contract                                                                 | Current state                                                                        | Gap verdict | Recommendation                                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Logger bootstrap           | Global CLI logging control plus `_configure_logging()` hook reservation          | Absent in `blindtag/cli.py`; no global `--log-level` / `--verbose`                   | **High**    | Land the bootstrap hook first so later reporting work does not have to reopen CLI routing                              |
+| Library logger reservation | `logging.getLogger(__name__)` in API/core without import-time handler attachment | No module logger reservation present                                                 | **Medium**  | Add named loggers in `core.py` and `api.py` without attaching handlers at import time                                  |
+| Structured event schema    | Timestamped operation records with outcome/error metadata                        | No BlindTag-owned structured event emission                                          | **High**    | Lock an event schema before choosing storage so tests and exports share one contract                                   |
+| Retained storage           | Queryable retained event history                                                 | No storage layer selected or implemented                                             | **High**    | Prefer one append-only authority first; defer multi-backend ambition until after the schema and query needs are proven |
+| Reporting endpoints        | `/log`, `/log/export`, or equivalent caller-facing reporting surface             | No reporting endpoints exist                                                         | **High**    | Scope read-only query/export endpoints only for the first pass; avoid write/mutation/report management surfaces        |
+| Severity filtering         | Caller-selectable thresholds (`error+`, `debug`, etc.)                           | No event filtering surface exists; only Uvicorn verbosity for the server process     | **Medium**  | Make filtering a query concern on top of stored structured levels, not a separate bespoke reporting grammar            |
+| Correlation continuity     | Request ID linked to retained evidence and exported reports                      | `X-Request-Id` exists, but is not persisted into a BlindTag-owned event/report layer | **Medium**  | Reuse `X-Request-Id` as the primary per-request join key rather than inventing a second correlation token              |
+| Validation/governance      | Reporting lanes and tests in Calamum + pytest                                    | No reporting catalog/test coverage exists                                            | **High**    | Add reporting-specific catalog entries and tests in the same pass as the first shipped reporting surface               |
 
 #### Recommendations
 
@@ -1942,22 +1942,22 @@ Human-readable summaries may exist on stderr or report surfaces, but machine-rea
 
 #### J.7 — Deliverables and execution sequence
 
-| # | Artifact | Action | Notes |
-| --- | --- | --- | --- |
-| 1 | `blindtag/cli.py` | MODIFY | Add global logging controls and `_configure_logging()` bootstrap |
-| 2 | `blindtag/api.py` | MODIFY | Persist retained API events; add query/export endpoints |
-| 3 | `blindtag/core.py` | MODIFY | Add quiet module logger reservation only |
-| 4 | `blindtag/reporting.py` | ADD | Centralize event schema, JSONL append/read, export helpers, and verification plumbing |
-| 5 | `.gitignore` | MODIFY | Keep `.blindtag/generated/` local-only |
-| 6 | `tests/test_reporting.py` | ADD | Reporting schema/store/query/export coverage |
-| 7 | `tests/test_api.py` | MODIFY | Add `/v1/log` and export endpoint coverage |
-| 8 | `tests/test_cli.py` | MODIFY | Add global log-level / bootstrap flag coverage as needed |
-| 9 | `catalog/test_definitions.json` | MODIFY | Add `blindtag-reporting` lane and update notes |
-| 10 | `README.md` / `CHANGELOG.md` | MODIFY | Document shipped reporting surface only after validation passes |
-| Gate A | `blindtag-reporting` targeted Calamum lane | RUN | Must pass before adjacent/full reruns |
-| Gate B | adjacent API / CLI reruns | RUN | Required if those surfaces changed |
-| Gate C | `blindtag-all` | RUN | Must return `decision: go` |
-| Gate D | evidence integrity verification | RUN | Verify checksums/manifest family and signatures where configured |
+| #      | Artifact                                   | Action | Notes                                                                                 |
+| ------ | ------------------------------------------ | ------ | ------------------------------------------------------------------------------------- |
+| 1      | `blindtag/cli.py`                          | MODIFY | Add global logging controls and `_configure_logging()` bootstrap                      |
+| 2      | `blindtag/api.py`                          | MODIFY | Persist retained API events; add query/export endpoints                               |
+| 3      | `blindtag/core.py`                         | MODIFY | Add quiet module logger reservation only                                              |
+| 4      | `blindtag/reporting.py`                    | ADD    | Centralize event schema, JSONL append/read, export helpers, and verification plumbing |
+| 5      | `.gitignore`                               | MODIFY | Keep `.blindtag/generated/` local-only                                                |
+| 6      | `tests/test_reporting.py`                  | ADD    | Reporting schema/store/query/export coverage                                          |
+| 7      | `tests/test_api.py`                        | MODIFY | Add `/v1/log` and export endpoint coverage                                            |
+| 8      | `tests/test_cli.py`                        | MODIFY | Add global log-level / bootstrap flag coverage as needed                              |
+| 9      | `catalog/test_definitions.json`            | MODIFY | Add `blindtag-reporting` lane and update notes                                        |
+| 10     | `README.md` / `CHANGELOG.md`               | MODIFY | Document shipped reporting surface only after validation passes                       |
+| Gate A | `blindtag-reporting` targeted Calamum lane | RUN    | Must pass before adjacent/full reruns                                                 |
+| Gate B | adjacent API / CLI reruns                  | RUN    | Required if those surfaces changed                                                    |
+| Gate C | `blindtag-all`                             | RUN    | Must return `decision: go`                                                            |
+| Gate D | evidence integrity verification            | RUN    | Verify checksums/manifest family and signatures where configured                      |
 
 #### J.8 — Acceptance criteria
 
@@ -2014,15 +2014,15 @@ This plan is intentionally mature but narrow: it gives BlindTag the first real r
 
 ##### Governance alignment assessment
 
-| Governance surface | Verdict | Evidence basis |
-| --- | --- | --- |
-| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass J stays inside API/CLI/core/tests/catalog/docs with no dependency expansion and no unrelated product-surface growth. |
-| BlindTag dependency policy | ALIGNED | The locked plan explicitly forbids a new runtime dependency and defers SQLite/alternate backends. |
-| BlindTag API stability rule | ALIGNED | New reporting endpoints are deliberately scoped and documented as the explicit subject of Pass J rather than accidental surface drift. |
-| Calamum validation precedent | ALIGNED | The plan requires dedicated lane coverage, `blindtag-all`, and retained artifact verification instead of ad hoc trust. |
-| Calamum security / evidence posture | ALIGNED | Checksums/manifest verification remain mandatory; signatures are mandatory when configured; names-only reporting remains required when signing is absent. |
-| Polymath security expectations | ALIGNED | The plan preserves fail-closed trust decisions, names-only evidence, path containment, and verifiable retained artifacts. |
-| Polymath user-facing expectations | ALIGNED | Query/export outputs are required to answer what ran, what happened, why, what next, and where the evidence lives while preserving machine-readable stability. |
+| Governance surface                                               | Verdict | Evidence basis                                                                                                                                                 |
+| ---------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass J stays inside API/CLI/core/tests/catalog/docs with no dependency expansion and no unrelated product-surface growth.                                      |
+| BlindTag dependency policy                                       | ALIGNED | The locked plan explicitly forbids a new runtime dependency and defers SQLite/alternate backends.                                                              |
+| BlindTag API stability rule                                      | ALIGNED | New reporting endpoints are deliberately scoped and documented as the explicit subject of Pass J rather than accidental surface drift.                         |
+| Calamum validation precedent                                     | ALIGNED | The plan requires dedicated lane coverage, `blindtag-all`, and retained artifact verification instead of ad hoc trust.                                         |
+| Calamum security / evidence posture                              | ALIGNED | Checksums/manifest verification remain mandatory; signatures are mandatory when configured; names-only reporting remains required when signing is absent.      |
+| Polymath security expectations                                   | ALIGNED | The plan preserves fail-closed trust decisions, names-only evidence, path containment, and verifiable retained artifacts.                                      |
+| Polymath user-facing expectations                                | ALIGNED | Query/export outputs are required to answer what ran, what happened, why, what next, and where the evidence lives while preserving machine-readable stability. |
 
 ##### Remaining blockers to final signoff
 
@@ -2153,11 +2153,11 @@ Before that next project uses BlindTag as a transport + unpack substrate, BlindT
 
 #### R.4 — Recommended forensic mode semantics
 
-| Mode | Intended use | Trust posture | Evidence depth | Default executable policy |
-| --- | --- | --- | --- | --- |
-| `operational` | Local troubleshooting and ordinary API review | Current Pass J baseline | bounded event rows + export family | not an authority lane |
-| `security` | Sensitive payload handling and controlled downstream transport | signed authority for privileged actions, fail closed on ambiguity | richer provenance + denied-action evidence | deny by default unless explicitly authorized |
-| `forensic` | Incident review, disputed actions, chain-of-custody exports | strongest available signing + verifier-friendly artifact family | hash chain + provenance packet + segment seal + signed bundle | deny by default and preserve denied attempts as evidence |
+| Mode          | Intended use                                                   | Trust posture                                                     | Evidence depth                                                | Default executable policy                                |
+| ------------- | -------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
+| `operational` | Local troubleshooting and ordinary API review                  | Current Pass J baseline                                           | bounded event rows + export family                            | not an authority lane                                    |
+| `security`    | Sensitive payload handling and controlled downstream transport | signed authority for privileged actions, fail closed on ambiguity | richer provenance + denied-action evidence                    | deny by default unless explicitly authorized             |
+| `forensic`    | Incident review, disputed actions, chain-of-custody exports    | strongest available signing + verifier-friendly artifact family   | hash chain + provenance packet + segment seal + signed bundle | deny by default and preserve denied attempts as evidence |
 
 #### R.5 — Proposed implementation lanes
 
@@ -2313,15 +2313,15 @@ It is also ORACL's recommendation that **Pass R (or an equivalent hardening lane
 
 ##### Governance alignment assessment
 
-| Governance surface | Verdict | Evidence basis |
-| --- | --- | --- |
-| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass R stays focused on reporting/security hardening, preserves API/codec stability expectations, and does not normalize broad architectural sprawl. |
-| BlindTag dependency policy | ALIGNED | The proposal prefers stronger verifier-friendly signing but explicitly preserves the operator approval gate for any new runtime crypto dependency. |
-| Pass J continuity / project precedent | ALIGNED | Pass R is framed as a follow-on hardening layer on top of the shipped Pass J substrate rather than a rewrite or repudiation of the retained-reporting baseline. |
-| Calamum validation discipline | ALIGNED | The proposal requires a dedicated hardening lane, adjacent reruns where needed, full `blindtag-all`, and retained artifact verification. |
-| Calamum security / evidence posture | ALIGNED | The proposal preserves names-only signing-state reporting, fail-closed trust handling, and manifest/checksum/signature verification after write. |
-| Polymath security expectations | ALIGNED | The proposal centers explicit authorization, names-only evidence, path containment, fail-closed ambiguity handling, and verifiable retained artifacts. |
-| Polymath user-facing expectations | ALIGNED | The proposed forensic/security outputs remain required to explain what failed, why, what happens next, and where the evidence lives without leaking secret material. |
+| Governance surface                                               | Verdict | Evidence basis                                                                                                                                                       |
+| ---------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass R stays focused on reporting/security hardening, preserves API/codec stability expectations, and does not normalize broad architectural sprawl.                 |
+| BlindTag dependency policy                                       | ALIGNED | The proposal prefers stronger verifier-friendly signing but explicitly preserves the operator approval gate for any new runtime crypto dependency.                   |
+| Pass J continuity / project precedent                            | ALIGNED | Pass R is framed as a follow-on hardening layer on top of the shipped Pass J substrate rather than a rewrite or repudiation of the retained-reporting baseline.      |
+| Calamum validation discipline                                    | ALIGNED | The proposal requires a dedicated hardening lane, adjacent reruns where needed, full `blindtag-all`, and retained artifact verification.                             |
+| Calamum security / evidence posture                              | ALIGNED | The proposal preserves names-only signing-state reporting, fail-closed trust handling, and manifest/checksum/signature verification after write.                     |
+| Polymath security expectations                                   | ALIGNED | The proposal centers explicit authorization, names-only evidence, path containment, fail-closed ambiguity handling, and verifiable retained artifacts.               |
+| Polymath user-facing expectations                                | ALIGNED | The proposed forensic/security outputs remain required to explain what failed, why, what happens next, and where the evidence lives without leaking secret material. |
 
 ##### Remaining blockers to final signoff
 
@@ -2378,6 +2378,346 @@ Final implementation judgment for Pass R:
 - **Governance status:** ALIGNED
 - **Closeout status:** READY
 
+### Pass S — Proposed: Pre-package security audit
+
+**Proposal posture:** BlindTag now has a stronger retained-evidence and elevated-provenance substrate, but package readiness should not rely on feature validation alone. Before packaging/public release, BlindTag should complete one explicit **pre-package security audit** that reviews shipped behavior, generated outputs, retained evidence, package contents, and operator-facing trust surfaces as a single release-hygiene lane.
+
+This is an audit pass, not a feature-growth pass. The goal is to prove that the codebase, local generated state, security messaging, package artifacts, and trust-bearing outputs are ready for publication without hidden drift.
+
+#### S.1 — Audit objective
+
+The pre-package security audit should answer five questions:
+
+1. **Does BlindTag fail closed where trust should fail closed?**
+2. **Do retained outputs, export bundles, and elevated-provenance artifacts prove what they claim to prove?**
+3. **Do package artifacts exclude local-only state, signing material, and machine-local overlays?**
+4. **Do human-facing security surfaces explain failures clearly without leaking secrets or overclaiming success?**
+5. **Does the shipped package behave the same way under audit as the source tree claims it does?**
+
+#### S.2 — Audit scope
+
+This audit pass should cover:
+
+- `blindtag/core.py`
+- `blindtag/api.py`
+- `blindtag/reporting.py`
+- `blindtag/cli.py`
+- `blindtag/widget.py`
+- package metadata and artifact-generation surfaces (`pyproject.toml`, `MANIFEST.in`, wheel/sdist outputs)
+- local-only generated-state routing (`.blindtag/`, `.calamum/`, `report_tmp/`, `.env`, signing material)
+- security documentation truthfulness (`README.md`, `SECURITY.md`, package metadata text)
+
+#### S.3 — Required audit tactics
+
+The audit must use multiple complementary tactics rather than one shallow sweep.
+
+##### Lane S-A — Deep code-review audit
+
+Required method:
+
+- perform line-level source review of trust-bearing modules and launch surfaces;
+- inspect failure paths, not just success paths;
+- trace where secrets, signing material, local paths, retained evidence, and operator-facing messages enter and leave the system;
+- verify that localhost-only assumptions, deny-by-default paths, and path containment are implemented consistently rather than described aspirationally.
+
+Minimum review targets:
+
+- request verification and export verification flows;
+- retained evidence generation and post-write verification;
+- package-entry launch surfaces;
+- clipboard / widget surfaces for silent data escape risk;
+- any path that could overclaim completion or under-report denial/quarantine states.
+
+##### Lane S-B — Sandbox content-based review
+
+Required method:
+
+- run sandbox-simulated reviews for elevated provenance / handoff paths;
+- inspect generated program output content, not just exit codes or whether the process survived;
+- verify that the final handoff posture is correctly classified as `complete`, `blocked`, `quarantined`, or `incomplete`;
+- verify that exported forensic/security bundles contain the provenance, chain, seal, and handoff evidence they claim to contain.
+
+Minimum sandbox review targets:
+
+- successful elevated handoff;
+- blocked executable handoff;
+- quarantined executable handoff;
+- incomplete / malformed provenance sequence;
+- tampered chain or seal state;
+- mismatched exported content vs manifest/checksum/signature claims.
+
+##### Lane S-C — Diagnostic script audit
+
+Required method:
+
+- use bounded local diagnostic scripts for questions that are awkward to settle by inspection alone;
+- keep scripts local-only and review-oriented;
+- scripts may inspect package contents, verify artifact families, enumerate retained outputs, simulate path-containment escape attempts, and compare manifest claims to real files.
+
+Preferred diagnostic-script targets:
+
+- wheel/sdist contents vs expected publishable files;
+- local-only exclusion audit (`.env`, `.blindtag`, `.calamum`, signing material, report_tmp);
+- checksum/signature/sidecar consistency audit;
+- generated-bundle completeness audit;
+- help/output truthfulness audit for CLI and API-facing surfaces;
+- package metadata rendering and classifier sanity.
+
+##### Lane S-D — Dependency and artifact review
+
+Required method:
+
+- inspect runtime dependencies for scope fit and release necessity;
+- verify that cryptography/signing dependencies are documented and intentional;
+- build publication artifacts and inspect them before any publish step;
+- confirm package metadata, entry points, and included files match the documented product surface.
+
+Minimum artifact checks:
+
+- wheel/sdist build succeeds;
+- rendered metadata is valid;
+- no local state or secret-bearing files are included;
+- no retained evidence roots are accidentally included;
+- widget / CLI / API entry points are represented correctly.
+
+##### Lane S-E — Operator-surface security messaging audit
+
+Required method:
+
+- review human-facing no-go / warning / denial packets for secret safety and clarity;
+- verify that security failures explain what failed, why, what next, and where evidence lives;
+- confirm that operator-facing success messages do not overstate completion when trust verification or handoff posture is incomplete.
+
+Minimum messaging targets:
+
+- export denial paths;
+- elevated provenance failures;
+- package/build/audit failures;
+- CLI help and launcher-facing summaries;
+- any publish-readiness verdict or package-readiness verdict.
+
+##### Lane S-F — Final adversarial lane
+
+Required method:
+
+- run one explicit adversarial closeout lane at the **end** of the pre-package audit after the ordinary audit slices, reruns, and package-artifact inspection have already passed;
+- treat this as an aggressive hostile-input / hostile-state challenge pass, not as a light smoke rerun;
+- use the adversarial lane to attack the exact trust-bearing claims BlindTag is preparing to ship: retained evidence truthfulness, export verification, path containment, denial/quarantine posture, and package-content boundaries;
+- record the adversarial findings as first-class retained evidence rather than folding them into casual notes.
+
+Execution posture:
+
+- this lane runs **last**;
+- this lane runs **aggressively**;
+- this lane is intended to break assumptions that earlier slices may have only confirmed under cooperative conditions.
+
+Minimum adversarial targets:
+
+- malformed or contradictory provenance packets;
+- replayed, expired, or mismatched signed/high-trust request material;
+- forged or edited retained ledger rows;
+- tampered manifest/checksum/signature families;
+- path-escape attempts against reporting/export/package-review roots;
+- package-content surprises such as local-only overlays or generated-state leakage;
+- operator-surface cases that falsely imply success after denial, quarantine, or incomplete handoff.
+
+#### S.4 — Calamum and audit-ladder contract
+
+The pre-package security audit should validate through a layered ladder rather than one monolithic run.
+
+1. **Focused security-audit slice**
+    - deep code-review findings captured and converted into concrete audit checks.
+2. **Sandbox content-validation slice**
+    - elevated provenance output content and handoff posture verified under simulated conditions.
+3. **Diagnostic-script slice**
+    - package/artifact/local-state assertions checked through bounded local review scripts.
+4. **Adjacent validation reruns**
+    - rerun affected Calamum definitions where the audit touches trust-bearing surfaces.
+5. **Full `blindtag-all` gate**
+    - confirm the package still passes the standard release-gate baseline.
+6. **Artifact verification gate**
+    - verify report / manifest / checksum / signature materials after the audit run.
+7. **Package artifact inspection gate**
+    - inspect wheel/sdist outputs before any publish decision.
+8. **Final adversarial gate**
+   - run the aggressive hostile-input / hostile-state lane last, after the cooperative audit slices are already green, and require retained evidence for its results.
+
+#### S.5 — Audit checklist
+
+The audit should not be considered complete until all of the following are explicitly checked:
+
+1. No secret values, local overlays, `.env`, or signing material are included in package artifacts.
+2. Local-only generated roots remain local-only and are not accidentally publishable.
+3. Retained evidence/export bundles verify after write and match actual files on disk.
+4. Elevated provenance outputs contain the required provenance and handoff fields.
+5. Sandbox review confirms output content and final handoff posture, not just command success.
+6. Path-containment failures deny safely and do not escape declared roots.
+7. Denied, quarantined, and incomplete states are represented truthfully in outputs.
+8. CLI/API/widget/user-facing messages remain calm, actionable, and secret-safe.
+9. Package metadata and entry points match the documented product surface.
+10. The final package-readiness judgment cites retained audit evidence rather than informal confidence.
+11. A final aggressive adversarial lane has been executed last, and its findings are reflected in the package-readiness judgment.
+
+#### S.6 — Gaps this audit is meant to catch
+
+This audit pass is specifically meant to catch the failure families that ordinary feature validation can miss:
+
+- package includes local-only files or generated state;
+- export bundles verify incompletely or drift from their manifests;
+- sandbox handoff posture is mislabeled as complete;
+- adversarial hostile-input behavior breaks trust claims only after the ordinary slices are green;
+- operator-facing messages overclaim success;
+- docs/security claims drift from shipped behavior;
+- release artifacts contain unexpected files or missing entry points;
+- path-containment or trust-boundary assumptions hold in code comments but not in code paths.
+
+#### S.7 — Final proposal judgment
+
+This proposed pre-package security audit is **aligned** with BlindTag local instructions, Calamum adversarial-testing precedent, and Polymath security expectations.
+
+It is also ORACL's recommendation that **Pass S (or an equivalent pre-package security audit lane) be completed before any public packaging or publication decision for BlindTag.**
+
+#### S.8 — Final implementation readiness and governance alignment assessment
+
+**Assessment date:** 2026-05-31  
+**Assessment scope:** readiness to execute Pass S exactly as bounded above; not a claim that the pre-package security audit has already been executed or that package/publication clearance has been granted.
+
+##### Verdict summary
+
+- **Implementation readiness:** **YES** — Pass S is sufficiently bounded, sequenced, and evidence-anchored to execute without another planning expansion.
+- **Governance alignment:** **YES** — the locked audit lane aligns with BlindTag local instructions, the Calamum adversarial-testing contract, and the parent Polymath security/style expectations.
+- **Closeout readiness:** **NO** — Pass S remains open until the audit is actually executed, retained audit evidence is collected, the final adversarial gate runs last, and the package-readiness judgment is issued from those retained results.
+
+##### Why the implementation lane is ready
+
+1. **The audit objective is explicit rather than generic.**
+    - Pass S now answers concrete release questions: fail-closed behavior, retained-output truthfulness, package-content hygiene, operator-surface honesty, and package-vs-source parity.
+2. **The audit tactics are complementary and bounded.**
+    - Deep code review, sandbox content review, diagnostic scripts, artifact/dependency inspection, operator-message review, and the final adversarial pass are each named and scoped rather than left as implied audit work.
+3. **The execution order is deterministic.**
+    - The audit ladder now establishes a specific sequence from cooperative review slices through artifact inspection and then into the mandatory final adversarial gate.
+4. **The strongest release-risk families are directly represented.**
+    - Package-content leakage, retained-evidence drift, mislabeled handoff posture, path escape, false-success messaging, and hostile-input breakage are all called out as explicit targets rather than assumed to be covered indirectly.
+5. **The final adversarial requirement closes the biggest false-confidence gap.**
+    - By requiring one aggressive hostile-input / hostile-state lane at the end, Pass S avoids declaring package readiness from only cooperative or nominal-path audit evidence.
+
+##### Governance alignment assessment
+
+| Governance surface                                               | Verdict | Evidence basis                                                                                                                                                                  |
+| ---------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projects/blindtag/AGENT_INSTRUCTIONS.md` scope/minimalism rules | ALIGNED | Pass S is documentation-first and planning-bounded, centered on audit execution rather than feature growth or unrequested architecture expansion.                               |
+| BlindTag dependency policy                                       | ALIGNED | The audit plan inspects runtime dependencies and packaging surfaces but does not normalize new dependency growth as part of the audit itself.                                   |
+| BlindTag package/publication boundary                            | ALIGNED | Pass S is explicitly framed as a pre-package / pre-publication gate rather than a casual optional review.                                                                       |
+| Calamum adversarial-testing contract                             | ALIGNED | The plan treats adversarial testing as a first-class final gate while still routing it through the normal validation machinery rather than inventing a separate authority lane. |
+| Calamum evidence / integrity posture                             | ALIGNED | The audit ladder preserves report / manifest / checksum / signature verification expectations and requires retained evidence for the final adversarial findings.                |
+| Polymath security expectations                                   | ALIGNED | Pass S preserves names-only evidence, fail-closed trust posture, path containment scrutiny, and verifiable retained outputs.                                                    |
+| Polymath user-facing expectations                                | ALIGNED | The audit explicitly reviews operator-facing denial/success messaging for clarity, next-step guidance, and overclaim prevention.                                                |
+
+##### Remaining blockers to final signoff
+
+Pass S is ready to execute, but these remain intentional blockers to closure until the audit is actually run:
+
+1. The deep code-review audit has not yet been executed and recorded as retained audit evidence.
+2. The sandbox content-based review has not yet been executed against the package-readiness lane.
+3. The bounded diagnostic-script audit has not yet produced retained findings for package contents, artifact families, and local-only exclusions.
+4. The dependency/artifact inspection has not yet verified the actual wheel/sdist publish surfaces.
+5. The operator-surface security messaging audit has not yet been performed against the final pre-package candidate state.
+6. The mandatory final adversarial lane has not yet been executed last.
+7. No Pass S retained evidence packet yet exists to support a package-readiness verdict.
+
+##### Final judgment
+
+Pass S is **execution-ready and governance-aligned**.
+
+Pass S is **not** audit-complete, validation-complete, or package-ready until the bounded audit lane runs end to end, the aggressive adversarial closeout gate executes last, and the package-readiness judgment is tied to retained audit evidence rather than planning confidence alone.
+
+#### S.9 — Audit execution receipt and package-readiness verdict
+
+**Execution date:** 2026-05-31
+
+Pass S has now been **executed as an audit lane**. The cooperative validation slices and the final adversarial closeout gate were run, retained evidence was produced, and the package-artifact inspection was completed.
+
+**Critical outcome:** the audit does **not** clear BlindTag for packaging/publication yet.
+
+The audit found real package-surface blockers even though the validation gates remained green.
+
+##### Executed evidence lanes
+
+- Focused reporting gate: `20260531T235518Z-blindtag-reporting` — `decision: go`
+- Full project gate: `20260531T235533Z-blindtag-all` — `decision: go`
+- Final aggressive adversarial / forensic gate: `20260531T235604Z-blindtag-forensic` — `decision: go`
+
+Retained artifact family confirmed for these runs:
+
+- `report.json`
+- `report.md`
+- `manifest.json`
+- `checksums.json`
+- checksum sidecars for the retained JSON/Markdown artifacts
+
+Package audit artifact written locally:
+
+- `report_tmp/pass_s_package_audit.json`
+
+##### Audit findings — passes
+
+1. **Local-only exclusion discipline held for the built artifacts.**
+    - The built wheel and sdist did **not** include `.env`, `.calamum`, `.blindtag`, or `report_tmp` content.
+2. **Package build succeeded.**
+    - Wheel and sdist were produced successfully under `report_tmp/pass_s_dist/`.
+3. **Declared entry points are present in the wheel metadata.**
+    - `blindtag`
+    - `blindtag-api`
+    - `blindtag-widget`
+4. **The final hostile lane ran last and passed.**
+    - The final retained run was the elevated provenance/adversarial definition `blindtag-forensic`, matching the locked Pass S execution order.
+
+##### Audit findings — blockers
+
+1. **Package assets are not present in the built wheel.**
+    - The wheel contains Python modules and metadata only.
+    - It does **not** include the `assets/` tree used by the README image references and by widget runtime surfaces such as image/icon loading.
+    - This is a package-readiness blocker because an installed wheel is not equivalent to the source-tree behavior BlindTag documents and depends on.
+2. **The built sdist also omits the asset tree.**
+    - The source distribution does not currently include the BlindTag asset files either.
+    - This means the packaging lane is relying on incomplete source contents for publication artifacts.
+3. **`MANIFEST.in` is absent.**
+    - Package inclusion is currently relying on setuptools defaults plus the generated source list rather than an explicit inclusion contract for non-Python assets.
+    - Given the missing asset tree in both wheel and sdist, this absence is now an evidenced packaging-control gap rather than a harmless omission.
+4. **README markup is malformed in shipped metadata.**
+    - The built package metadata includes the malformed top-of-file fragment beginning with `<p` / `="center">,k.$$...`.
+    - This is a publication-surface defect because the packaged long description is not cleanly rendered/truthful at the top of the shipped metadata.
+5. **Build-time metadata deprecation warnings were emitted.**
+    - The build emitted setuptools deprecation warnings around the TOML-table `project.license` form and license classifiers.
+    - These are not the primary publication blocker today, but they are real packaging-hygiene findings that should be corrected in the package lane.
+
+##### Package-readiness judgment
+
+**Package readiness:** **NO**
+
+Why this is a no-go verdict:
+
+- the built artifacts do not yet preserve source-tree asset expectations;
+- the shipped metadata is carrying malformed README markup;
+- the package-content contract for non-Python assets is not explicit enough to support a trustworthy publication lane.
+
+##### What Pass S did prove
+
+Pass S did prove that:
+
+- the current trust-bearing reporting and elevated-provenance code paths still validate cleanly under Calamum;
+- retained evidence packets and checksum sidecars are being emitted for the fresh reporting / full-suite / forensic runs;
+- local-only overlays are not leaking into the currently built wheel/sdist;
+- the final hostile lane can run last without reopening the previously validated reporting/security substrate.
+
+##### Final implementation judgment for Pass S
+
+- **Audit execution status:** COMPLETE
+- **Validation gate status:** COMPLETE
+- **Governance status:** ALIGNED
+- **Package readiness:** NO-GO
+- **Closeout status:** OPEN — packaging/publication remains blocked pending packaging-surface remediation.
+
 ---
 
 ## Section 10 — Deferred: System Tray Background Process (`blindtag-tray`)
@@ -2415,27 +2755,196 @@ No secrets. No network. `HKCU` registry write is user-authorized opt-in only. Al
 
 ---
 
+## Section 11 — Planned: Packaging, publication, and Windows installer lane
+
+**Status:** LOCKED — planning/documentation lane updated on 2026-05-31.  
+**Dependency:** Pass S remains the governing package-audit evidence source. Packaging/publication execution stays blocked until the Pass S blockers are remediated in code and then re-verified from built artifacts.  
+**Primary checklist:** `projects/blindtag/docs/PACKAGING_AND_PUBLICATION_CHECKLIST.md`
+
+### 11.1 — Guidance sources reviewed for this lane
+
+This packaging/publication update is grounded in the highest-signal relevant guidance already present in the workspace:
+
+- `projects/blindtag/docs/WIDGET_SCHEMA.md`
+  - confirms widget assets must resolve relative to the installed package, not just the source tree.
+- `projects/blindtag/docs/CLI_IMPLEMENTATION_CHECKLIST.md`
+  - preserves the release expectation that publishable artifacts exclude `.env`, signing material, and local-only state.
+- `docs/installation/SHIPPED_CODESENTINEL_OFFLINE_INSTALL_PACKAGE_20260104.md`
+  - establishes deterministic shipped-install posture, checksum/manifest discipline, optional Windows `.exe` installer precedent, and operator-facing helper flow.
+- `docs/installation/INSTALLATION.md`
+  - confirms multiple install surfaces are acceptable when they are clearly explained and followed by verification.
+- `docs/installation/README.md`
+  - reinforces installer-first operator guidance for Windows GUI install surfaces.
+- `docs/installation/INSTALL_PROFILES.md`
+  - reinforces profile-driven installation choices rather than one opaque install path.
+- `docs/architecture/general/PACKAGING_PIPELINE_DIRECTIVE.md`
+  - reinforces explicit build, wheel/sdist inspection, and metadata verification before any publish decision.
+- `projects/unc-data-science-notes/temp/seam_offline_bundle_1.1.5-py3-none-any.whl/howtos/docs/guides/QUICK_PUBLISH_REFERENCE.md`
+  - reinforces the staged `build -> validate -> TestPyPI -> install/retest -> production PyPI` sequence.
+
+### 11.2 — Package/publication posture carried forward from Pass S
+
+Pass S is still authoritative for the current package-readiness verdict:
+
+- wheel and sdist builds succeed;
+- local-only overlays are not leaking into the package artifacts;
+- package readiness remains **NO-GO** because the current wheel/sdist omit required asset content, the package-side asset inclusion contract is not explicit enough, and shipped metadata still carries malformed README markup.
+
+Therefore this lane is **not** a casual publish checklist bolted on top of unresolved packaging defects. It is the locked release path that begins with package-surface remediation and ends only after rebuilt artifacts, installer behavior, and staged publication evidence all agree.
+
+### 11.3 — Locked artifact family for the release lane
+
+BlindTag's release lane now has two sibling deliverable surfaces:
+
+1. **Python publication surface**
+    - source distribution (`sdist`)
+    - wheel (`whl`)
+    - verified package metadata
+    - staged TestPyPI validation before any production PyPI upload
+
+2. **Windows widget install surface**
+    - a Windows `.exe` installer for widget-oriented usage
+    - installer-owned presentation for install choices
+    - sandbox install validation on the built installer artifact before any release closeout
+
+Where practical, the Windows installer lane should also emit operator-facing integrity/support artifacts in the same spirit as the shipped-install precedent:
+
+- installer build identifier/version
+- artifact checksums
+- manifest of included release artifacts
+- short install/readback notes pointing the operator to the packaged README
+
+### 11.4 — Locked Windows installer experience contract
+
+The Windows installer is now a required planning/output surface for BlindTag's widget-based operations.
+
+#### Installer positioning
+
+- The installer must gently steer mainstream users toward the ordinary/safe path without sounding patronizing.
+- The default option should be presented as the most natural choice for recreational/everyday use.
+- The advanced option should remain available, but the copy should make clear that it is for users who specifically need custom install behavior.
+
+#### Required top-level install choices
+
+The installer must offer two primary install modes:
+
+1. **Default (Recommended)**
+    - presentation goal: subtly preferred and easiest to choose
+    - intended audience: recreational/everyday BlindTag usage
+    - expected behavior: install the normal widget/CLI surface with the standard release assets and no unnecessary decision burden
+
+2. **Advanced**
+    - presentation goal: available but visually and textually secondary to Default
+    - required warning language: this mode is for custom setup decisions and should be used only when the operator specifically needs non-default behavior
+    - expected scope: custom path/surface/options selection, without implying that ordinary users should start here
+
+#### Required installer options
+
+The installer must explicitly offer these options:
+
+- `Create shortcut`
+- `Enable quick launch`
+- `Display README.md after install`
+
+These options must be treated as first-class install choices, not buried post-install surprises.
+
+#### Minimum Default-mode behavior
+
+Default mode should, at minimum:
+
+- install the normal BlindTag package surface;
+- install the widget launch surface expected for terminal-free use;
+- include the runtime asset set required by the widget and packaged documentation references;
+- make the ordinary post-install launch path obvious;
+- preserve a calm, low-friction install flow.
+
+#### Minimum Advanced-mode behavior
+
+Advanced mode may expose:
+
+- install-location control;
+- shortcut/quick-launch toggles;
+- optional post-install launch behavior;
+- optional documentation display behavior;
+- any future packaging-profile switches needed for custom/operator scenarios.
+
+Advanced mode must **not** become an excuse to leave Default underspecified or misleading.
+
+### 11.5 — Locked execution ladder for packaging/publication
+
+This is the required release order for BlindTag once code remediation begins:
+
+1. **Remediate Pass S package blockers**
+    - restore asset inclusion in wheel/sdist;
+    - make package inclusion rules explicit;
+    - fix malformed README packaging metadata;
+    - clear packaging-hygiene warnings that materially affect publication trust.
+
+2. **Rebuild and inspect publication artifacts**
+    - build `sdist` and `wheel`;
+    - inspect artifact contents, metadata, and entry points;
+    - confirm widget/runtime assets are present in the shipped artifacts;
+    - confirm local-only/generated roots remain excluded.
+
+3. **Build the Windows installer artifact**
+    - produce the `.exe` installer for widget-based operations;
+    - verify that installer content matches the packaged product surface rather than a source-tree-only layout;
+    - verify the required mode/options contract is present.
+
+4. **Run sandbox install validation**
+    - test the installer in a sandboxed/simulated environment;
+    - validate output content, installed surface truthfulness, and handoff completion posture;
+    - verify the widget launch path, shortcuts, quick-launch behavior, and README display option behave as claimed.
+
+5. **Run the publication staging lane**
+    - run package validation checks on the final artifacts;
+    - publish to TestPyPI first;
+    - install from the staged publication artifact and re-run sanity checks.
+
+6. **Production publication lane**
+    - publish to production only after TestPyPI/install verification passes;
+    - record release evidence, artifact identifiers, and the final publish verdict.
+
+### 11.6 — Acceptance criteria for this lane
+
+The packaging/publication lane is complete only when all of the following are true:
+
+1. Pass S package blockers have been remediated and re-verified from built artifacts.
+2. The shipped wheel/sdist include the runtime/documentation assets BlindTag actually depends on.
+3. Packaged README/metadata render truthfully at the top of the shipped distribution surface.
+4. The Windows `.exe` installer exists and matches the locked Default-vs-Advanced experience contract.
+5. The installer exposes `Create shortcut`, `Enable quick launch`, and `Display README.md after install` as explicit options.
+6. Sandbox install validation proves content, launch path, and handoff posture rather than acting as a smoke-only ritual.
+7. TestPyPI publication and install validation complete before any production upload.
+8. Final package/publication judgment cites retained build/install/publication evidence rather than informal confidence.
+
+---
+
 ## Sign-off Readiness
 
-| Gate                     | Status                                                                                                       |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Code review              | Done (this document)                                                                                         |
-| Test suite review        | Done — 5 gaps identified                                                                                     |
-| Security alignment       | Done — 2 gaps flagged                                                                                        |
-| Calamum config           | DONE — baseline established Pass D                                                                           |
-| CI pipeline              | DONE — GitHub Actions wired Pass A                                                                           |
-| Force push authorization | Pending joediggidyyy                                                                                         |
-| Pass K plan              | LOCKED — aesthetic alignment, glow button, taskbar icon; execute before Pass I                               |
-| Pass I plan              | LOCKED — widget-based background posture; execute after Pass K gate                                          |
-| Tray process (§10)       | DEFERRED — preserved for future pass after Pass I ships                                                      |
-| Pass M plan              | LOCKED — bounded implementation plan aligned to Polymath + Calamum contracts                                 |
-| Pass N plan              | LOCKED — corrective widget closure pass for terminal-free launch, hidden notification, and top-toggle parity |
-| Pass O plan              | LOCKED — clipboard reliability and pressed-state truthfulness closure aligned to Calamum test/security and Polymath guides |
-| PyPI publish readiness   | PASS O BLOCKER CLEARED — widget publish blocker closed on 2026-05-31; any publish timing is now a separate operator/release decision |
-| Pass J plan              | COMPLETE — logging/reporting shipped and validated (`20260531T230143Z-blindtag-reporting`, `20260531T230637Z-blindtag-all`) |
+| Gate                     | Status                                                                                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Code review              | Done (this document)                                                                                                                                        |
+| Test suite review        | Done — 5 gaps identified                                                                                                                                    |
+| Security alignment       | Done — 2 gaps flagged                                                                                                                                       |
+| Calamum config           | DONE — baseline established Pass D                                                                                                                          |
+| CI pipeline              | DONE — GitHub Actions wired Pass A                                                                                                                          |
+| Force push authorization | Pending joediggidyyy                                                                                                                                        |
+| Pass K plan              | LOCKED — aesthetic alignment, glow button, taskbar icon; execute before Pass I                                                                              |
+| Pass I plan              | LOCKED — widget-based background posture; execute after Pass K gate                                                                                         |
+| Tray process (§10)       | DEFERRED — preserved for future pass after Pass I ships                                                                                                     |
+| Pass M plan              | LOCKED — bounded implementation plan aligned to Polymath + Calamum contracts                                                                                |
+| Pass N plan              | LOCKED — corrective widget closure pass for terminal-free launch, hidden notification, and top-toggle parity                                                |
+| Pass O plan              | LOCKED — clipboard reliability and pressed-state truthfulness closure aligned to Calamum test/security and Polymath guides                                  |
+| PyPI publish readiness   | PASS O BLOCKER CLEARED — widget publish blocker closed on 2026-05-31; any publish timing is now a separate operator/release decision                        |
+| Pass J plan              | COMPLETE — logging/reporting shipped and validated (`20260531T230143Z-blindtag-reporting`, `20260531T230637Z-blindtag-all`)                                 |
 | Pass R proposal          | COMPLETE — elevated provenance hardening and sandbox-verified forensic lane shipped (`20260531T233221Z-blindtag-forensic`, `20260531T233314Z-blindtag-all`) |
+| Pass S proposal          | EXECUTED — audit complete; package readiness NO-GO pending packaging-surface remediation                                                                    |
+| Pass T plan              | LOCKED — packaging/publication checklist + Windows installer contract documented; execute after Pass S blocker remediation                                  |
 
 **Execution sequence:** Pass K (aesthetic) → Pass I (background posture) → Pass M (library editor + button cleanup) → Pass N (widget closure corrections) → Pass O (clipboard reliability + pressed-state truthfulness + live publish blocker closure) → Pass J (logging).
+
+**Packaging/publication follow-on:** Pass S blocker remediation → Pass T packaging checklist execution → Windows installer sandbox validation → TestPyPI validation → production publication.
 
 **Follow-on security precondition:** Before BlindTag is reused as a transport/unpack substrate for executable payloads, land Pass R (or an equivalent hardening lane) so the reporting/security surface moves from operational integrity to chain-of-custody-grade security / forensic posture.
 
